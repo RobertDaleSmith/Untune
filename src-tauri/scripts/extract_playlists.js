@@ -25,7 +25,7 @@ for (let i = 0; i < playlists.length; i++) {
 }
 
 const json = JSON.stringify(data);
-const tmpPath = `/tmp/wavvy_playlists_${Date.now()}.json`;
+const tmpPath = `/tmp/waves_playlists_${Date.now()}.json`;
 const nsString = $.NSString.alloc.initWithUTF8String(json);
 nsString.writeToFileAtomicallyEncodingError(tmpPath, true, $.NSUTF8StringEncoding, null);
 

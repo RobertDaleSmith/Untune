@@ -66,3 +66,37 @@ export interface TrackQuery {
   sortColumn?: string;
   sortDir?: string;
 }
+
+export interface PlaybackInfo {
+  isPlaying: boolean;
+  trackId: number | null;
+  position: number;
+  duration: number | null;
+  volume: number;
+  shuffle: boolean;
+  repeatMode: string;
+}
+
+export interface AlbumSummary {
+  album: string;
+  artist: string;
+  trackCount: number;
+  totalDuration: number;
+  year: number | null;
+}
+
+export interface ArtistSummary {
+  name: string;
+  albumCount: number;
+  trackCount: number;
+}
+
+export interface GenreSummary {
+  name: string;
+  trackCount: number;
+}
+
+export interface ViewSettings {
+  shuffle: boolean;
+  repeatMode: string;
+}

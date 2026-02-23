@@ -10,14 +10,6 @@ pub struct Playlist {
     pub track_count: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlaylistTrack {
-    pub playlist_id: i64,
-    pub track_id: i64,
-    pub position: i32,
-}
-
 /// JXA playlist extraction output
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

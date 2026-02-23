@@ -1,10 +1,14 @@
 import { useEffect, useCallback } from "react";
 import { useLibraryStore } from "./stores/libraryStore";
+import { usePlaybackStore } from "./stores/playbackStore";
+import { useNavigationStore } from "./stores/navigationStore";
 import { getTracks, getTrackCount, importLibrary } from "./lib/commands";
-import { TrackTable } from "./components/TrackTable";
 import { SearchBar } from "./components/SearchBar";
 import { ImportProgress } from "./components/ImportProgress";
 import { StatusBar } from "./components/StatusBar";
+import { PlaybackBar } from "./components/PlaybackBar";
+import { Sidebar } from "./components/Sidebar";
+import { ContentRouter } from "./components/ContentRouter";
 
 function App() {
   const {
@@ -12,12 +16,15 @@ function App() {
     isImported,
     isImporting,
     importError,
-    searchResults,
     setTracks,
     setIsImporting,
     setImportError,
     setTrackCount,
   } = useLibraryStore();
+
+  const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
+  const navigateTo = useNavigationStore((s) => s.navigateTo);
+  const searchResults = useLibraryStore((s) => s.searchResults);
 
   const loadTracks = useCallback(async () => {
     try {
@@ -40,6 +47,13 @@ function App() {
     loadTracks();
   }, [loadTracks]);
 
+  // When search results appear, switch to songs view
+  useEffect(() => {
+    if (searchResults != null) {
+      navigateTo("songs");
+    }
+  }, [searchResults, navigateTo]);
+
   const handleImport = useCallback(async () => {
     setIsImporting(true);
     setImportError(null);
@@ -60,12 +74,10 @@ function App() {
     // Progress modal auto-dismisses, tracks load in handleImport
   }, []);
 
-  const displayTracks = searchResults ?? tracks;
-
   if (!isImported && !isImporting) {
     return (
       <div className="h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center">
-        <h1 className="text-3xl font-bold mb-2">Wavvy</h1>
+        <h1 className="text-3xl font-bold mb-2">Waves</h1>
         <p className="text-neutral-400 mb-6">
           Import your Music library to get started.
         </p>
@@ -86,12 +98,15 @@ function App() {
   }
 
   return (
-    <div className="h-screen bg-neutral-950 text-neutral-100 flex flex-col">
+    <div
+      className="h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {isImporting && <ImportProgress onComplete={handleImportComplete} />}
 
       <header className="flex items-center justify-between px-3 py-2 bg-neutral-900 border-b border-neutral-800">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-bold tracking-wide">Wavvy</h1>
+          <h1 className="text-sm font-bold tracking-wide">Waves</h1>
         </div>
         <div className="flex items-center gap-2">
           <SearchBar />
@@ -105,8 +120,16 @@ function App() {
         </div>
       </header>
 
-      <TrackTable tracks={displayTracks} />
-      <StatusBar tracks={displayTracks} />
+      <div className="flex flex-1 min-h-0">
+        <Sidebar />
+        <ContentRouter />
+      </div>
+
+      {currentTrackId ? (
+        <PlaybackBar tracks={tracks} />
+      ) : (
+        <StatusBar tracks={tracks} />
+      )}
     </div>
   );
 }

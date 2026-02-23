@@ -41,7 +41,7 @@ const data = {
 };
 
 const json = JSON.stringify(data);
-const tmpPath = `/tmp/wavvy_tracks_${Date.now()}.json`;
+const tmpPath = `/tmp/waves_tracks_${Date.now()}.json`;
 const nsString = $.NSString.alloc.initWithUTF8String(json);
 nsString.writeToFileAtomicallyEncodingError(tmpPath, true, $.NSUTF8StringEncoding, null);
 

@@ -71,6 +71,12 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             FOREIGN KEY (playlist_id) REFERENCES playlists(id),
             FOREIGN KEY (track_id) REFERENCES tracks(id)
         );
+
+        CREATE TABLE IF NOT EXISTS view_settings (
+            view_key TEXT PRIMARY KEY,
+            shuffle INTEGER NOT NULL DEFAULT 0,
+            repeat_mode TEXT NOT NULL DEFAULT 'off'
+        );
         ",
     )?;
     Ok(())
