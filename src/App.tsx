@@ -4,22 +4,28 @@ import { useLibraryStore } from "./stores/libraryStore";
 import { useNavigationStore } from "./stores/navigationStore";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useThemeStore } from "./stores/themeStore";
-import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl } from "./lib/commands";
+import { useColumnBrowserStore, type BrowserColumn } from "./stores/columnBrowserStore";
+import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl, createPlaylist, createPlaylistFolder } from "./lib/commands";
 import { ImportProgress } from "./components/ImportProgress";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
 import { ContentRouter } from "./components/ContentRouter";
 import { StatusBar } from "./components/StatusBar";
 import { useDragRegion } from "./hooks/useDragRegion";
+import { WelcomeAnimation } from "./components/WelcomeAnimation";
+import { MiniPlayer } from "./components/MiniPlayer";
 
 function App() {
   const onDrag = useDragRegion();
   const {
     tracks,
+    isLoading,
     isImported,
     isImporting,
     importError,
     setTracks,
+    setIsLoading,
+    setIsImported,
     setIsImporting,
     setImportError,
     setTrackCount,
@@ -29,23 +35,29 @@ function App() {
   const searchResults = useLibraryStore((s) => s.searchResults);
   const showStatusBar = useThemeStore((s) => s.showStatusBar);
   const showAlbumAccent = useThemeStore((s) => s.showAlbumAccent);
+  const isMiniPlayer = useThemeStore((s) => s.isMiniPlayer);
 
   const loadTracks = useCallback(async () => {
     try {
       const count = await getTrackCount();
       if (count > 0) {
         setTrackCount(count);
+        setIsImported(true);
+        setIsLoading(false);
         const allTracks = await getTracks({
           limit: 200000,
           sortColumn: "id",
           sortDir: "asc",
         });
         setTracks(allTracks);
+      } else {
+        setIsLoading(false);
       }
     } catch (err) {
       console.error("Failed to load tracks:", err);
+      setIsLoading(false);
     }
-  }, [setTracks, setTrackCount]);
+  }, [setTracks, setTrackCount, setIsLoading, setIsImported]);
 
   useEffect(() => {
     loadTracks();
@@ -79,9 +91,10 @@ function App() {
   const handleImportRef = useRef(handleImport);
   handleImportRef.current = handleImport;
 
-  // Initialize theme on mount
+  // Initialize theme and column browser on mount
   useEffect(() => {
     useThemeStore.getState().init();
+    useColumnBrowserStore.getState().init();
   }, []);
 
   // Listen for menu "Re-import Library", theme changes, and system media key events
@@ -105,23 +118,26 @@ function App() {
         if (s.isPlaying) s.pause();
       }),
       listen("media-goto-current", () => {
-        const ps = usePlaybackStore.getState();
-        const qs = ps.queueSource;
-        if (!qs) { navigateTo("songs"); }
-        else if (qs === "songs") { navigateTo("songs"); }
-        else if (qs.startsWith("playlist:")) {
+        const qs = usePlaybackStore.getState().queueSource;
+        const ns = useNavigationStore.getState();
+        if (qs?.startsWith("playlist:")) {
           const id = parseInt(qs.split(":")[1], 10);
           const name = qs.split(":").slice(2).join(":") || "Playlist";
-          useNavigationStore.getState().navigateToPlaylist(id, name);
-        } else if (qs.startsWith("album:")) {
+          ns.navigateToPlaylist(id, name);
+        } else if (qs?.startsWith("album:")) {
           const parts = qs.split(":");
-          useNavigationStore.getState().navigateToAlbum(parts[1] ?? "", parts.slice(2).join(":") || null);
-        } else if (qs.startsWith("artist:")) {
-          useNavigationStore.getState().navigateToArtist(qs.slice(7));
-        } else if (qs.startsWith("genre:")) {
-          useNavigationStore.getState().navigateToGenre(qs.slice(6));
-        } else { navigateTo("songs"); }
-        requestAnimationFrame(() => ps.requestScrollToNowPlaying());
+          ns.navigateToAlbum(parts[1] ?? "", parts.slice(2).join(":") || null);
+        } else if (qs?.startsWith("artist:")) {
+          ns.navigateToArtist(qs.slice(7));
+        } else if (qs?.startsWith("genre:")) {
+          ns.navigateToGenre(qs.slice(6));
+        } else {
+          ns.navigateTo("songs");
+        }
+        // Allow React to process navigation and mount the target view
+        setTimeout(() => {
+          usePlaybackStore.getState().requestScrollToNowPlaying();
+        }, 50);
       }),
       listen("media-next", () => usePlaybackStore.getState().next()),
       listen("media-prev", () => usePlaybackStore.getState().prev()),
@@ -150,6 +166,69 @@ function App() {
       listen<string>("media-repeat", (event) => {
         usePlaybackStore.setState({ repeatMode: event.payload });
       }),
+      listen<boolean>("col-browser-toggle", (event) => {
+        useColumnBrowserStore.getState().setVisible(event.payload);
+      }),
+      listen<string>("col-browser-column", (event) => {
+        try {
+          const { column, enabled } = JSON.parse(event.payload) as { column: BrowserColumn; enabled: boolean };
+          const store = useColumnBrowserStore.getState();
+          if (enabled && !store.columns.includes(column)) {
+            store.toggleColumn(column);
+          } else if (!enabled && store.columns.includes(column)) {
+            store.toggleColumn(column);
+          }
+        } catch { /* ignore parse errors */ }
+      }),
+      listen<boolean>("col-browser-album-artist", (event) => {
+        useColumnBrowserStore.getState().setUseAlbumArtist(event.payload);
+      }),
+      listen("menu-new-playlist", async () => {
+        try {
+          const id = await createPlaylist("Untitled Playlist");
+          useNavigationStore.getState().requestSidebarRefresh();
+          useNavigationStore.getState().navigateToPlaylist(id, "Untitled Playlist");
+        } catch (err) {
+          console.error("Failed to create playlist:", err);
+        }
+      }),
+      listen("menu-new-playlist-from-selection", async () => {
+        try {
+          // Use table selection first, fall back to currently playing track
+          let trackIds = useLibraryStore.getState().selectedTrackIds;
+          if (trackIds.length === 0) {
+            const pb = usePlaybackStore.getState();
+            if (pb.currentTrackId != null) {
+              trackIds = [pb.currentTrackId];
+            }
+          }
+          const id = await createPlaylist(
+            "Untitled Playlist",
+            null,
+            trackIds.length > 0 ? trackIds : null,
+          );
+          useNavigationStore.getState().requestSidebarRefresh();
+          useNavigationStore.getState().navigateToPlaylist(id, "Untitled Playlist");
+        } catch (err) {
+          console.error("Failed to create playlist from selection:", err);
+        }
+      }),
+      listen("menu-new-smart-playlist", () => {
+        // Emit an event the Sidebar can listen to, or set global state
+        useNavigationStore.getState().requestSidebarRefresh();
+        window.dispatchEvent(new CustomEvent("waves-open-smart-editor"));
+      }),
+      listen("toggle-mini-player", () => {
+        useThemeStore.getState().toggleMiniPlayer();
+      }),
+      listen("menu-new-playlist-folder", async () => {
+        try {
+          await createPlaylistFolder("New Folder");
+          useNavigationStore.getState().requestSidebarRefresh();
+        } catch (err) {
+          console.error("Failed to create playlist folder:", err);
+        }
+      }),
     ];
     return () => {
       unlisteners.forEach((p) => p.then((fn) => fn()));
@@ -168,14 +247,24 @@ function App() {
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         usePlaybackStore.getState().next();
-      } else if (e.key === "ArrowUp" && e.metaKey) {
+      } else if (e.key === "ArrowUp" && e.metaKey && e.shiftKey) {
         e.preventDefault();
         const s = usePlaybackStore.getState();
         s.setVolume(Math.min(1, s.volume + 0.1));
-      } else if (e.key === "ArrowDown" && e.metaKey) {
+      } else if (e.key === "ArrowDown" && e.metaKey && e.shiftKey) {
         e.preventDefault();
         const s = usePlaybackStore.getState();
         s.setVolume(Math.max(0, s.volume - 0.1));
+      } else if (e.key === "ArrowUp" && e.metaKey) {
+        e.preventDefault();
+        // Scroll to top of current list
+        const el = document.querySelector<HTMLElement>(".flex-1.overflow-auto");
+        if (el) el.scrollTop = 0;
+      } else if (e.key === "ArrowDown" && e.metaKey) {
+        e.preventDefault();
+        // Scroll to bottom of current list
+        const el = document.querySelector<HTMLElement>(".flex-1.overflow-auto");
+        if (el) el.scrollTop = el.scrollHeight;
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -252,25 +341,45 @@ function App() {
     // Progress modal auto-dismisses, tracks load in handleImport
   }, []);
 
+  // Loading splash — show logo while checking for existing library
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-white flex flex-col">
+        <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
+        <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
+          <WelcomeAnimation />
+        </div>
+      </div>
+    );
+  }
+
   if (!isImported && !isImporting) {
     return (
-      <div data-tauri-drag-region onMouseDown={onDrag} className="h-screen bg-n-950 text-n-100 flex flex-col items-center justify-center">
-        <h1 className="text-3xl font-bold mb-2">Waves</h1>
-        <p className="text-n-400 mb-6">
-          Import your Music library to get started.
-        </p>
-        {importError && (
-          <div className="mb-4 p-3 bg-red-950 border border-red-800 rounded-lg max-w-lg">
-            <p className="text-red-300 text-sm font-medium mb-1">Import failed</p>
-            <p className="text-red-400 text-xs font-mono break-all">{importError}</p>
-          </div>
-        )}
-        <button
-          onClick={handleImport}
-          className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors"
-        >
-          Import Library
-        </button>
+      <div className="h-screen bg-white flex flex-col">
+        {/* Title bar drag region */}
+        <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
+
+        {/* Icon video — fills available space */}
+        <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
+          <WelcomeAnimation />
+        </div>
+
+        {/* Import controls */}
+        <div className="flex-shrink-0 pb-12 pt-2 flex flex-col items-center gap-3">
+          {importError && (
+            <div className="mb-2 p-3 bg-red-50 border border-red-200 rounded-lg max-w-lg">
+              <p className="text-red-600 text-sm font-medium mb-1">Import failed</p>
+              <p className="text-red-500 text-xs font-mono break-all">{importError}</p>
+            </div>
+          )}
+          <button
+            onClick={handleImport}
+            className="px-8 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg font-medium transition-colors text-[15px]"
+          >
+            Import Library
+          </button>
+          <p className="text-neutral-400 text-xs">Import your Apple Music library to get started</p>
+        </div>
       </div>
     );
   }
@@ -281,6 +390,10 @@ function App() {
         <ImportProgress onComplete={handleImportComplete} mode="initial" />
       </div>
     );
+  }
+
+  if (isMiniPlayer) {
+    return <MiniPlayer tracks={tracks} />;
   }
 
   return (
@@ -319,7 +432,7 @@ function App() {
           <Sidebar />
           <div className="flex flex-col flex-1 min-w-0">
             <ContentRouter />
-            {showStatusBar && <StatusBar tracks={searchResults ?? tracks} />}
+            {showStatusBar && <StatusBar />}
           </div>
         </div>
       </div>
