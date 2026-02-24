@@ -133,3 +133,31 @@ export async function getGenreTracks(genre: string): Promise<Track[]> {
 export async function getArtworkDataUrl(artworkHash: string): Promise<string | null> {
   return invoke<string | null>("get_artwork_data_url", { artworkHash });
 }
+
+export async function getTrackAllArtworks(trackId: number): Promise<string[]> {
+  return invoke<string[]>("get_track_all_artworks", { trackId });
+}
+
+export async function updateNowPlaying(
+  title: string,
+  artist: string | null,
+  album: string | null,
+  duration: number | null,
+  position: number | null,
+  isPlaying: boolean,
+  artworkHash: string | null,
+): Promise<void> {
+  return invoke("update_now_playing", { title, artist, album, duration, position, isPlaying, artworkHash });
+}
+
+export async function clearNowPlaying(): Promise<void> {
+  return invoke("clear_now_playing");
+}
+
+export async function getPreference(key: string): Promise<string | null> {
+  return invoke<string | null>("get_preference", { key });
+}
+
+export async function setPreference(key: string, value: string): Promise<void> {
+  return invoke("set_preference", { key, value });
+}

@@ -31,3 +31,8 @@ tauri-plugin-shell = "2"
 base64 = "0.22"
 rodio = { version = "0.20", features = ["symphonia-all"] }
 symphonia = { version = "0.5", features = ["all"] }
+souvlaki = "0.7"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.24"
+objc = "0.2"

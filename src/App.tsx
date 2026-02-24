@@ -1,16 +1,19 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useLibraryStore } from "./stores/libraryStore";
-import { usePlaybackStore } from "./stores/playbackStore";
 import { useNavigationStore } from "./stores/navigationStore";
-import { getTracks, getTrackCount, importLibrary } from "./lib/commands";
-import { SearchBar } from "./components/SearchBar";
+import { usePlaybackStore } from "./stores/playbackStore";
+import { useThemeStore } from "./stores/themeStore";
+import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl } from "./lib/commands";
 import { ImportProgress } from "./components/ImportProgress";
-import { StatusBar } from "./components/StatusBar";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
 import { ContentRouter } from "./components/ContentRouter";
+import { StatusBar } from "./components/StatusBar";
+import { useDragRegion } from "./hooks/useDragRegion";
 
 function App() {
+  const onDrag = useDragRegion();
   const {
     tracks,
     isImported,
@@ -22,9 +25,10 @@ function App() {
     setTrackCount,
   } = useLibraryStore();
 
-  const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
   const navigateTo = useNavigationStore((s) => s.navigateTo);
   const searchResults = useLibraryStore((s) => s.searchResults);
+  const showStatusBar = useThemeStore((s) => s.showStatusBar);
+  const showAlbumAccent = useThemeStore((s) => s.showAlbumAccent);
 
   const loadTracks = useCallback(async () => {
     try {
@@ -55,6 +59,7 @@ function App() {
   }, [searchResults, navigateTo]);
 
   const handleImport = useCallback(async () => {
+    if (useLibraryStore.getState().isImporting) return;
     setIsImporting(true);
     setImportError(null);
     try {
@@ -70,15 +75,188 @@ function App() {
     }
   }, [setIsImporting, setImportError, loadTracks]);
 
+  // Use a ref so the menu event listener always sees the latest handleImport
+  const handleImportRef = useRef(handleImport);
+  handleImportRef.current = handleImport;
+
+  // Initialize theme on mount
+  useEffect(() => {
+    useThemeStore.getState().init();
+  }, []);
+
+  // Listen for menu "Re-import Library", theme changes, and system media key events
+  useEffect(() => {
+    const unlisteners = [
+      listen("menu-reimport", () => handleImportRef.current()),
+      listen<string>("theme-change", (event) => {
+        const t = event.payload as "light" | "dark" | "system";
+        useThemeStore.getState().setTheme(t);
+      }),
+      listen("artwork-updated", () => {
+        loadTracks();
+      }),
+      listen("media-toggle", () => usePlaybackStore.getState().togglePlayPause()),
+      listen("media-play", () => {
+        const s = usePlaybackStore.getState();
+        if (!s.isPlaying && s.currentTrackId != null) s.resume();
+      }),
+      listen("media-pause", () => {
+        const s = usePlaybackStore.getState();
+        if (s.isPlaying) s.pause();
+      }),
+      listen("media-goto-current", () => {
+        const ps = usePlaybackStore.getState();
+        const qs = ps.queueSource;
+        if (!qs) { navigateTo("songs"); }
+        else if (qs === "songs") { navigateTo("songs"); }
+        else if (qs.startsWith("playlist:")) {
+          const id = parseInt(qs.split(":")[1], 10);
+          const name = qs.split(":").slice(2).join(":") || "Playlist";
+          useNavigationStore.getState().navigateToPlaylist(id, name);
+        } else if (qs.startsWith("album:")) {
+          const parts = qs.split(":");
+          useNavigationStore.getState().navigateToAlbum(parts[1] ?? "", parts.slice(2).join(":") || null);
+        } else if (qs.startsWith("artist:")) {
+          useNavigationStore.getState().navigateToArtist(qs.slice(7));
+        } else if (qs.startsWith("genre:")) {
+          useNavigationStore.getState().navigateToGenre(qs.slice(6));
+        } else { navigateTo("songs"); }
+        requestAnimationFrame(() => ps.requestScrollToNowPlaying());
+      }),
+      listen("media-next", () => usePlaybackStore.getState().next()),
+      listen("media-prev", () => usePlaybackStore.getState().prev()),
+      listen("media-stop", () => {
+        usePlaybackStore.getState().stopPolling();
+        stopPlayback().catch(() => {});
+        usePlaybackStore.setState({ isPlaying: false, currentTrackId: null, position: 0, duration: null });
+      }),
+      listen("media-vol-up", () => {
+        const s = usePlaybackStore.getState();
+        s.setVolume(Math.min(1, s.volume + 0.1));
+      }),
+      listen("media-vol-down", () => {
+        const s = usePlaybackStore.getState();
+        s.setVolume(Math.max(0, s.volume - 0.1));
+      }),
+      listen<boolean>("toggle-status-bar", (event) => {
+        useThemeStore.getState().setShowStatusBar(event.payload);
+      }),
+      listen<boolean>("toggle-album-accent", (event) => {
+        useThemeStore.getState().setShowAlbumAccent(event.payload);
+      }),
+      listen<boolean>("media-shuffle", (event) => {
+        usePlaybackStore.setState({ shuffle: event.payload });
+      }),
+      listen<string>("media-repeat", (event) => {
+        usePlaybackStore.setState({ repeatMode: event.payload });
+      }),
+    ];
+    return () => {
+      unlisteners.forEach((p) => p.then((fn) => fn()));
+    };
+  }, []);
+
+  // Global keyboard shortcuts (arrow keys for prev/next when not in an input)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        usePlaybackStore.getState().prev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        usePlaybackStore.getState().next();
+      } else if (e.key === "ArrowUp" && e.metaKey) {
+        e.preventDefault();
+        const s = usePlaybackStore.getState();
+        s.setVolume(Math.min(1, s.volume + 0.1));
+      } else if (e.key === "ArrowDown" && e.metaKey) {
+        e.preventDefault();
+        const s = usePlaybackStore.getState();
+        s.setVolume(Math.max(0, s.volume - 0.1));
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Update macOS Now Playing info when track or playback state changes
+  const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
+  const isPlaying = usePlaybackStore((s) => s.isPlaying);
+  const currentArtworkUrl = usePlaybackStore((s) => s.currentArtworkUrl);
+
+  useEffect(() => {
+    if (currentTrackId == null) {
+      clearNowPlaying().catch(() => {});
+      return;
+    }
+    const track = tracks.find((t) => t.id === currentTrackId);
+    if (!track) return;
+    updateNowPlaying(
+      track.title,
+      track.artist,
+      track.album,
+      track.duration,
+      null,
+      isPlaying,
+      track.artworkHash,
+    ).catch(() => {});
+  }, [currentTrackId, isPlaying, tracks]);
+
+  // Load artwork globally when current track changes
+  useEffect(() => {
+    const track = currentTrackId != null ? tracks.find((t) => t.id === currentTrackId) : null;
+    if (!track?.artworkHash) {
+      usePlaybackStore.setState({ currentArtworkUrl: null });
+      return;
+    }
+    let cancelled = false;
+    getArtworkDataUrl(track.artworkHash).then((url) => {
+      if (!cancelled) usePlaybackStore.setState({ currentArtworkUrl: url });
+    }).catch(() => {
+      if (!cancelled) usePlaybackStore.setState({ currentArtworkUrl: null });
+    });
+    return () => { cancelled = true; };
+  }, [currentTrackId, tracks]);
+
+  // Blurred background crossfade state
+  const [bgReady, setBgReady] = useState(false);
+  const [bgSrc, setBgSrc] = useState<string | null>(null);
+  const prevArtworkRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (currentArtworkUrl === prevArtworkRef.current) return;
+    prevArtworkRef.current = currentArtworkUrl;
+    if (!currentArtworkUrl) {
+      setBgReady(false);
+      // After fade out, clear the src
+      const t = setTimeout(() => setBgSrc(null), 800);
+      return () => clearTimeout(t);
+    }
+    // Preload the image, then swap
+    setBgReady(false);
+    const img = new Image();
+    img.onload = () => {
+      setBgSrc(currentArtworkUrl);
+      // Small delay to ensure the src is set before fading in
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setBgReady(true));
+      });
+    };
+    img.src = currentArtworkUrl;
+  }, [currentArtworkUrl]);
+
   const handleImportComplete = useCallback(() => {
     // Progress modal auto-dismisses, tracks load in handleImport
   }, []);
 
   if (!isImported && !isImporting) {
     return (
-      <div className="h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center">
+      <div data-tauri-drag-region onMouseDown={onDrag} className="h-screen bg-n-950 text-n-100 flex flex-col items-center justify-center">
         <h1 className="text-3xl font-bold mb-2">Waves</h1>
-        <p className="text-neutral-400 mb-6">
+        <p className="text-n-400 mb-6">
           Import your Music library to get started.
         </p>
         {importError && (
@@ -97,39 +275,54 @@ function App() {
     );
   }
 
+  if (!isImported && isImporting) {
+    return (
+      <div data-tauri-drag-region onMouseDown={onDrag} className="h-screen bg-n-950 text-n-100 flex flex-col">
+        <ImportProgress onComplete={handleImportComplete} mode="initial" />
+      </div>
+    );
+  }
+
   return (
     <div
-      className="h-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden"
+      className="h-screen bg-n-950 text-n-100 relative overflow-hidden"
       onContextMenu={(e) => e.preventDefault()}
     >
-      {isImporting && <ImportProgress onComplete={handleImportComplete} />}
-
-      <header className="flex items-center justify-between px-3 py-2 bg-neutral-900 border-b border-neutral-800">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-bold tracking-wide">Waves</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <SearchBar />
-          <button
-            onClick={handleImport}
-            disabled={isImporting}
-            className="px-3 py-1.5 text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-md border border-neutral-700 transition-colors disabled:opacity-50"
+      {/* Blurred artwork background */}
+      {showAlbumAccent && (
+        <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
+          <div
+            className="absolute inset-[-48px] will-change-[filter]"
+            style={{ filter: "var(--accent-filter)" }}
           >
-            Re-import
-          </button>
+            {bgSrc && (
+              <img
+                src={bgSrc}
+                alt=""
+                className="w-full h-full object-cover transition-opacity duration-800 ease-in-out"
+                style={{ opacity: bgReady ? 1 : 0 }}
+              />
+            )}
+          </div>
+          {/* Theme-adaptive overlay for readability */}
+          <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
         </div>
-      </header>
-
-      <div className="flex flex-1 min-h-0">
-        <Sidebar />
-        <ContentRouter />
-      </div>
-
-      {currentTrackId ? (
-        <PlaybackBar tracks={tracks} />
-      ) : (
-        <StatusBar tracks={tracks} />
       )}
+
+      {/* Main UI */}
+      <div className="relative z-10 flex flex-col h-full">
+        {isImporting && <ImportProgress onComplete={handleImportComplete} mode="reimport" />}
+
+        <PlaybackBar tracks={tracks} />
+
+        <div className="flex flex-1 min-h-0">
+          <Sidebar />
+          <div className="flex flex-col flex-1 min-w-0">
+            <ContentRouter />
+            {showStatusBar && <StatusBar tracks={searchResults ?? tracks} />}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

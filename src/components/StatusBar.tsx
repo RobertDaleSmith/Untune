@@ -1,4 +1,5 @@
-import { formatTotalDuration, formatNumber } from "../utils/formatters";
+import { formatTotalDuration, formatNumber, formatFileSize } from "../utils/formatters";
+import { useDragRegion } from "../hooks/useDragRegion";
 import type { Track } from "../lib/types";
 
 interface StatusBarProps {
@@ -6,17 +7,19 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ tracks }: StatusBarProps) {
+  const onDrag = useDragRegion();
   const totalDuration = tracks.reduce(
     (sum, t) => sum + (t.duration ?? 0),
     0,
   );
+  const totalSize = tracks.reduce(
+    (sum, t) => sum + (t.size ?? 0),
+    0,
+  );
 
   return (
-    <div className="flex items-center justify-between px-3 py-1 bg-neutral-900 border-t border-neutral-800 text-xs text-neutral-500">
-      <span>
-        {formatNumber(tracks.length)} tracks
-      </span>
-      <span>{formatTotalDuration(totalDuration)}</span>
+    <div onMouseDown={onDrag} className="flex items-center justify-center gap-3 px-3 py-2 bg-n-900/50 border-t border-n-800 text-xs text-n-500">
+      <span>{formatNumber(tracks.length)} songs, {formatTotalDuration(totalDuration)}, {formatFileSize(totalSize)}</span>
     </div>
   );
 }

@@ -1,13 +1,19 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use souvlaki::{MediaMetadata, MediaPlayback, MediaPosition};
+use tauri::{AppHandle, State};
 
 use crate::db::{self, Database};
+use crate::media::MediaControlsState;
 use crate::playback::{PlaybackState, RepeatMode};
+use crate::PlaybackMenuItems;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackInfo {
     pub is_playing: bool,
+    pub is_paused: bool,
     pub track_id: Option<i64>,
     pub position: f64,
     pub duration: Option<f64>,
@@ -148,6 +154,7 @@ pub fn get_playback_info(playback: State<'_, PlaybackState>) -> PlaybackInfo {
     };
     PlaybackInfo {
         is_playing: playback.is_playing(),
+        is_paused: playback.is_paused(),
         track_id: playback.current_track_id(),
         position: playback.position(),
         duration: playback.duration(),
@@ -163,30 +170,51 @@ pub fn set_volume(level: f32, playback: State<'_, PlaybackState>) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn set_shuffle(enabled: bool, playback: State<'_, PlaybackState>) -> Result<(), String> {
-    playback.set_shuffle(enabled)
+pub fn set_shuffle(
+    enabled: bool,
+    playback: State<'_, PlaybackState>,
+    menu_items: State<'_, PlaybackMenuItems>,
+) -> Result<(), String> {
+    playback.set_shuffle(enabled)?;
+    let _ = menu_items.shuffle.set_checked(enabled);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn set_repeat_mode(mode: String, playback: State<'_, PlaybackState>) -> Result<(), String> {
+pub fn set_repeat_mode(
+    mode: String,
+    playback: State<'_, PlaybackState>,
+    menu_items: State<'_, PlaybackMenuItems>,
+) -> Result<(), String> {
     let repeat = match mode.as_str() {
         "all" => RepeatMode::All,
         "one" => RepeatMode::One,
         _ => RepeatMode::Off,
     };
-    playback.set_repeat_mode(repeat)
+    playback.set_repeat_mode(repeat)?;
+    let _ = menu_items.repeat_off.set_checked(repeat == RepeatMode::Off);
+    let _ = menu_items.repeat_all.set_checked(repeat == RepeatMode::All);
+    let _ = menu_items.repeat_one.set_checked(repeat == RepeatMode::One);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn toggle_shuffle(playback: State<'_, PlaybackState>) -> Result<bool, String> {
+pub fn toggle_shuffle(
+    playback: State<'_, PlaybackState>,
+    menu_items: State<'_, PlaybackMenuItems>,
+) -> Result<bool, String> {
     let current = playback.shuffle();
     let new_val = !current;
     playback.set_shuffle(new_val)?;
+    let _ = menu_items.shuffle.set_checked(new_val);
     Ok(new_val)
 }
 
 #[tauri::command]
-pub fn cycle_repeat(playback: State<'_, PlaybackState>) -> Result<String, String> {
+pub fn cycle_repeat(
+    playback: State<'_, PlaybackState>,
+    menu_items: State<'_, PlaybackMenuItems>,
+) -> Result<String, String> {
     let current = playback.repeat_mode();
     let next = match current {
         RepeatMode::Off => RepeatMode::All,
@@ -194,6 +222,9 @@ pub fn cycle_repeat(playback: State<'_, PlaybackState>) -> Result<String, String
         RepeatMode::One => RepeatMode::Off,
     };
     playback.set_repeat_mode(next)?;
+    let _ = menu_items.repeat_off.set_checked(next == RepeatMode::Off);
+    let _ = menu_items.repeat_all.set_checked(next == RepeatMode::All);
+    let _ = menu_items.repeat_one.set_checked(next == RepeatMode::One);
     let s = match next {
         RepeatMode::Off => "off",
         RepeatMode::All => "all",
@@ -231,4 +262,71 @@ pub fn save_view_settings(
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     db::save_view_settings(&conn, &view_key, shuffle, &repeat_mode).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_now_playing(
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    duration: Option<f64>,
+    position: Option<f64>,
+    is_playing: bool,
+    artwork_hash: Option<String>,
+    app: AppHandle,
+    media_controls: State<'_, MediaControlsState>,
+) -> Result<(), String> {
+    let mut guard = media_controls.0.lock().map_err(|e| e.to_string())?;
+    if let Some(controls) = guard.as_mut() {
+        let dur = duration.map(|d| Duration::from_secs_f64(d));
+
+        // Resolve artwork hash to a file:// URL for the system Now Playing widget
+        let cover_url = artwork_hash.and_then(|hash| {
+            let artwork_dir = Database::artwork_dir(&app).ok()?;
+            for ext in &["jpg", "png"] {
+                let path = artwork_dir.join(format!("{}.{}", hash, ext));
+                if path.exists() {
+                    return Some(format!("file://{}", path.to_string_lossy()));
+                }
+            }
+            None
+        });
+
+        controls
+            .set_metadata(MediaMetadata {
+                title: Some(&title),
+                artist: artist.as_deref(),
+                album: album.as_deref(),
+                duration: dur,
+                cover_url: cover_url.as_deref(),
+            })
+            .map_err(|e| format!("{:?}", e))?;
+
+        let playback = if is_playing {
+            MediaPlayback::Playing {
+                progress: position.map(|p| MediaPosition(Duration::from_secs_f64(p))),
+            }
+        } else {
+            MediaPlayback::Paused {
+                progress: position.map(|p| MediaPosition(Duration::from_secs_f64(p))),
+            }
+        };
+        controls
+            .set_playback(playback)
+            .map_err(|e| format!("{:?}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_now_playing(
+    media_controls: State<'_, MediaControlsState>,
+) -> Result<(), String> {
+    let mut guard = media_controls.0.lock().map_err(|e| e.to_string())?;
+    if let Some(controls) = guard.as_mut() {
+        controls
+            .set_playback(MediaPlayback::Stopped)
+            .map_err(|e| format!("{:?}", e))?;
+    }
+    Ok(())
 }
