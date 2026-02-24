@@ -78,12 +78,15 @@ pub fn insert_playlist(
     persistent_id: &str,
     name: &str,
     is_smart: bool,
+    is_folder: bool,
+    parent_id: Option<i64>,
+    sort_order: i32,
     track_count: i32,
 ) -> Result<i64, rusqlite::Error> {
     conn.execute(
-        "INSERT OR REPLACE INTO playlists (persistent_id, name, is_smart, track_count)
-         VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![persistent_id, name, is_smart as i32, track_count],
+        "INSERT OR REPLACE INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![persistent_id, name, is_smart as i32, is_folder as i32, parent_id, sort_order, track_count],
     )?;
     Ok(conn.last_insert_rowid())
 }

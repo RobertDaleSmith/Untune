@@ -40,6 +40,9 @@ export interface Playlist {
   persistentId: string;
   name: string;
   isSmart: boolean;
+  isFolder: boolean;
+  parentId: number | null;
+  sortOrder: number;
   trackCount: number;
 }
 
@@ -69,6 +72,7 @@ export interface TrackQuery {
 
 export interface PlaybackInfo {
   isPlaying: boolean;
+  isPaused: boolean;
   trackId: number | null;
   position: number;
   duration: number | null;

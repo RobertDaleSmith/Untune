@@ -12,12 +12,22 @@ const data = [];
 for (let i = 0; i < playlists.length; i++) {
     const pl = playlists[i];
     try {
-        const trackPersistentIds = pl.tracks.persistentID();
+        const isFolder = pl.class() === "folder playlist";
+        let parentPersistentId = null;
+        try {
+            const parent = pl.parent();
+            if (parent && parent.class() === "folder playlist") {
+                parentPersistentId = parent.persistentID();
+            }
+        } catch (e) { /* top-level playlist */ }
+
         data.push({
             persistentId: pl.persistentID(),
             name: pl.name(),
-            isSmart: pl.smart(),
-            trackPersistentIds: trackPersistentIds,
+            isSmart: isFolder ? false : pl.smart(),
+            isFolder: isFolder,
+            parentPersistentId: parentPersistentId,
+            trackPersistentIds: isFolder ? [] : pl.tracks.persistentID(),
         });
     } catch (e) {
         // Skip playlists that can't be read (e.g., Genius playlists)

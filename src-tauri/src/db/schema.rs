@@ -1,5 +1,12 @@
 use rusqlite::Connection;
 
+fn migrate_playlists(conn: &Connection) {
+    // Add columns for playlist folders — ignore errors if they already exist
+    let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN is_folder INTEGER DEFAULT 0");
+    let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN parent_id INTEGER REFERENCES playlists(id)");
+    let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN sort_order INTEGER DEFAULT 0");
+}
+
 pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "
@@ -60,7 +67,11 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             persistent_id TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
             is_smart INTEGER DEFAULT 0,
-            track_count INTEGER DEFAULT 0
+            is_folder INTEGER DEFAULT 0,
+            parent_id INTEGER,
+            sort_order INTEGER DEFAULT 0,
+            track_count INTEGER DEFAULT 0,
+            FOREIGN KEY (parent_id) REFERENCES playlists(id)
         );
 
         CREATE TABLE IF NOT EXISTS playlist_tracks (
@@ -77,7 +88,13 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             shuffle INTEGER NOT NULL DEFAULT 0,
             repeat_mode TEXT NOT NULL DEFAULT 'off'
         );
+
+        CREATE TABLE IF NOT EXISTS preferences (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         ",
     )?;
+    migrate_playlists(conn);
     Ok(())
 }

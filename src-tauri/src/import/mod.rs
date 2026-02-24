@@ -58,8 +58,69 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
     {
         let db_state = app.state::<Database>();
         let mut conn = db_state.conn.lock().map_err(|e| e.to_string())?;
+
+        // Preserve artwork_hash from previous import so we don't lose it
+        let mut artwork_by_pid: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        let mut artwork_by_path: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare("SELECT persistent_id, file_path, artwork_hash FROM tracks WHERE artwork_hash IS NOT NULL")
+                .map_err(|e| format!("Artwork preserve query failed: {}", e))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let pid: Option<String> = row.get(0)?;
+                    let fp: Option<String> = row.get(1)?;
+                    let hash: String = row.get(2)?;
+                    Ok((pid, fp, hash))
+                })
+                .map_err(|e| format!("Artwork preserve failed: {}", e))?;
+            for row in rows {
+                if let Ok((pid, fp, hash)) = row {
+                    if let Some(pid) = pid {
+                        artwork_by_pid.insert(pid, hash.clone());
+                    }
+                    if let Some(fp) = fp {
+                        artwork_by_path.insert(fp, hash);
+                    }
+                }
+            }
+        }
+        log::info!("Preserved {} artwork hashes ({} by pid, {} by path)",
+            artwork_by_pid.len() + artwork_by_path.len(),
+            artwork_by_pid.len(),
+            artwork_by_path.len(),
+        );
+
         db::clear_tracks(&conn).map_err(|e| format!("Clear failed: {}", e))?;
         db::batch_insert_tracks(&mut conn, &merged).map_err(|e| format!("Insert failed: {}", e))?;
+
+        // Restore artwork_hash for tracks that match previous data
+        let restored = {
+            let tx = conn.transaction().map_err(|e| format!("Tx failed: {}", e))?;
+            let mut count = 0u64;
+            {
+                let mut stmt = tx
+                    .prepare("UPDATE tracks SET artwork_hash = ?1 WHERE persistent_id = ?2 AND artwork_hash IS NULL")
+                    .map_err(|e| e.to_string())?;
+                for (pid, hash) in &artwork_by_pid {
+                    count += stmt.execute(rusqlite::params![hash, pid]).unwrap_or(0) as u64;
+                }
+            }
+            {
+                let mut stmt = tx
+                    .prepare("UPDATE tracks SET artwork_hash = ?1 WHERE file_path = ?2 AND artwork_hash IS NULL")
+                    .map_err(|e| e.to_string())?;
+                for (fp, hash) in &artwork_by_path {
+                    count += stmt.execute(rusqlite::params![hash, fp]).unwrap_or(0) as u64;
+                }
+            }
+            tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+            count
+        };
+        log::info!("Restored {} artwork hashes from previous import", restored);
+
         db::rebuild_fts(&conn).map_err(|e| format!("FTS rebuild failed: {}", e))?;
     }
     emit_progress(app, "db_insert", "Database import complete", 1, 1);
@@ -72,16 +133,79 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
             let db_state = app.state::<Database>();
             let mut conn = db_state.conn.lock().map_err(|e| e.to_string())?;
 
-            for playlist in &playlists {
+            // Two-pass insertion: folders first, then regular playlists
+            // This ensures parent_id references are valid when inserting children
+            let mut pid_to_db_id: std::collections::HashMap<String, i64> =
+                std::collections::HashMap::new();
+
+            // Pass 1: Insert all folders (may be nested, so iterate until all resolved)
+            let folders: Vec<_> = playlists.iter()
+                .enumerate()
+                .filter(|(_, p)| p.is_folder)
+                .collect();
+
+            let mut remaining_folders: Vec<(usize, &crate::models::JxaPlaylist)> = folders;
+            let mut last_remaining = remaining_folders.len() + 1;
+
+            while !remaining_folders.is_empty() && remaining_folders.len() < last_remaining {
+                last_remaining = remaining_folders.len();
+                let mut still_remaining = Vec::new();
+
+                for (orig_idx, folder) in &remaining_folders {
+                    let parent_db_id = match &folder.parent_persistent_id {
+                        Some(ppid) => {
+                            if let Some(&db_id) = pid_to_db_id.get(ppid) {
+                                Some(db_id)
+                            } else {
+                                // Parent folder not yet inserted, defer
+                                still_remaining.push((*orig_idx, *folder));
+                                continue;
+                            }
+                        }
+                        None => None,
+                    };
+
+                    let db_id = db::insert_playlist(
+                        &conn,
+                        &folder.persistent_id,
+                        &folder.name,
+                        false,
+                        true,
+                        parent_db_id,
+                        *orig_idx as i32,
+                        0,
+                    )
+                    .map_err(|e| format!("Folder insert failed: {}", e))?;
+
+                    pid_to_db_id.insert(folder.persistent_id.clone(), db_id);
+                }
+
+                remaining_folders = still_remaining;
+            }
+
+            // Pass 2: Insert regular playlists
+            for (idx, playlist) in playlists.iter().enumerate() {
+                if playlist.is_folder {
+                    continue;
+                }
+
+                let parent_db_id = playlist.parent_persistent_id.as_ref()
+                    .and_then(|ppid| pid_to_db_id.get(ppid).copied());
+
                 let track_count = playlist.track_persistent_ids.len() as i32;
                 let pl_id = db::insert_playlist(
                     &conn,
                     &playlist.persistent_id,
                     &playlist.name,
                     playlist.is_smart,
+                    false,
+                    parent_db_id,
+                    idx as i32,
                     track_count,
                 )
                 .map_err(|e| format!("Playlist insert failed: {}", e))?;
+
+                pid_to_db_id.insert(playlist.persistent_id.clone(), pl_id);
 
                 // Resolve persistent IDs to track IDs
                 let track_entries: Vec<(i64, i32)> = playlist
@@ -103,7 +227,8 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
                 let _ = db::insert_playlist_tracks(&mut conn, pl_id, &track_entries);
             }
             emit_progress(app, "playlists", &format!("Imported {} playlists", playlist_count), 1, 1);
-            log::info!("Imported {} playlists", playlist_count);
+            log::info!("Imported {} playlists ({} folders)", playlist_count,
+                playlists.iter().filter(|p| p.is_folder).count());
         }
         Err(e) => {
             log::warn!("Playlist extraction failed (non-fatal): {}", e);
@@ -114,8 +239,13 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
     // Phase 6: Spawn background artwork extraction
     let app_handle = app.clone();
     std::thread::spawn(move || {
-        if let Err(e) = artwork::extract_artwork_background(&app_handle) {
-            log::warn!("Background artwork extraction failed: {}", e);
+        match artwork::extract_artwork_background(&app_handle) {
+            Ok(()) => {
+                let _ = app_handle.emit("artwork-updated", ());
+            }
+            Err(e) => {
+                log::warn!("Background artwork extraction failed: {}", e);
+            }
         }
     });
 

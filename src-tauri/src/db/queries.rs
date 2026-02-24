@@ -148,7 +148,8 @@ pub fn get_track_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
 
 pub fn get_playlists(conn: &Connection) -> Result<Vec<Playlist>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, persistent_id, name, is_smart, track_count FROM playlists ORDER BY name",
+        "SELECT id, persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count
+         FROM playlists ORDER BY sort_order, name",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(Playlist {
@@ -156,7 +157,10 @@ pub fn get_playlists(conn: &Connection) -> Result<Vec<Playlist>, rusqlite::Error
             persistent_id: row.get(1)?,
             name: row.get(2)?,
             is_smart: row.get::<_, i32>(3)? != 0,
-            track_count: row.get(4)?,
+            is_folder: row.get::<_, i32>(4)? != 0,
+            parent_id: row.get(5)?,
+            sort_order: row.get(6)?,
+            track_count: row.get(7)?,
         })
     })?;
     rows.collect()
@@ -213,7 +217,7 @@ pub fn get_tracks_missing_artwork(
     conn: &Connection,
 ) -> Result<Vec<(i64, Option<String>, Option<String>, bool)>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, persistent_id, file_path, has_artwork FROM tracks WHERE artwork_hash IS NULL AND file_path IS NOT NULL",
+        "SELECT id, persistent_id, file_path, has_artwork FROM tracks WHERE artwork_hash IS NULL",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok((
@@ -224,6 +228,26 @@ pub fn get_tracks_missing_artwork(
         ))
     })?;
     rows.collect()
+}
+
+// --- Preferences ---
+
+pub fn get_preference(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT value FROM preferences WHERE key = ?",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+pub fn set_preference(conn: &Connection, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO preferences (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = ?2",
+        params![key, value],
+    )?;
+    Ok(())
 }
 
 // --- Browse queries ---
