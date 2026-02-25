@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useNavigationStore } from "../stores/navigationStore";
 import { formatDuration } from "../utils/formatters";
@@ -60,6 +61,10 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
     queueSource,
     playError,
     requestScrollToNowPlaying,
+    audioRoute,
+    audioDevices,
+    refreshDevices,
+    switchDevice,
   } = usePlaybackStore();
 
   const { navigateTo, navigateToPlaylist, navigateToAlbum, navigateToArtist, navigateToGenre } =
@@ -98,6 +103,10 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
   const preMuteVolumeRef = useRef(1.0);
   const [dragPosition, setDragPosition] = useState<number | null>(null);
   const [showRemaining, setShowRemaining] = useState(false);
+  const [showDevicePicker, setShowDevicePicker] = useState(false);
+  const devicePickerRef = useRef<HTMLDivElement>(null);
+  const deviceBtnRef = useRef<HTMLButtonElement>(null);
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const currentTrack = currentTrackId
     ? tracks.find((t) => t.id === currentTrackId)
@@ -199,6 +208,18 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
       setVolume(preMuteVolumeRef.current || 1.0);
     }
   }, [volume, setVolume]);
+
+  // Close device picker on click outside
+  useEffect(() => {
+    if (!showDevicePicker) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (devicePickerRef.current && !devicePickerRef.current.contains(e.target as Node)) {
+        setShowDevicePicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showDevicePicker]);
 
   const displayPosition = dragPosition ?? position;
   const progressPct = duration && duration > 0 ? (displayPosition / duration) * 100 : 0;
@@ -389,6 +410,28 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                   />
                 </div>
               </div>
+              <div className="relative hidden sm:block">
+                <button
+                  ref={deviceBtnRef}
+                  onClick={() => {
+                    if (!showDevicePicker) {
+                      refreshDevices();
+                      if (deviceBtnRef.current) {
+                        const rect = deviceBtnRef.current.getBoundingClientRect();
+                        setPickerPos({ top: rect.top, left: rect.right });
+                      }
+                    }
+                    setShowDevicePicker((v) => !v);
+                  }}
+                  className={`p-1.5 transition-colors ${audioRoute?.isAirplay ? "text-accent" : "text-n-500 hover:text-n-300"}`}
+                  title={audioRoute ? `Output: ${audioRoute.name}` : "Audio output"}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+                    <polygon points="12,15 17,21 7,21" fill="currentColor" stroke="none" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
           <div className="pointer-events-auto shrink-0 ml-4">
@@ -396,6 +439,57 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
           </div>
         </div>
       </div>
+
+      {/* Device picker dropdown — rendered via portal to escape overflow:hidden */}
+      {showDevicePicker && createPortal(
+        <div
+          ref={devicePickerRef}
+          className="fixed w-56 bg-n-800 border border-n-700 rounded-lg shadow-xl overflow-hidden z-[9999]"
+          style={{ top: pickerPos.top + 28, left: pickerPos.left - 224 }}
+        >
+          <div className="px-3 py-2 text-[10px] text-n-500 uppercase tracking-wider font-medium border-b border-n-700">
+            Audio Output
+          </div>
+          <div className="max-h-48 overflow-y-auto py-1">
+            {audioDevices.map((device) => (
+              <button
+                key={device.id}
+                onClick={() => {
+                  switchDevice(device.id);
+                  setShowDevicePicker(false);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 transition-colors ${
+                  device.isDefault
+                    ? "text-accent bg-accent/10"
+                    : "text-n-300 hover:bg-n-700"
+                }`}
+              >
+                {device.isAirplay ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                    <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+                    <polygon points="12,15 17,21 7,21" fill="currentColor" stroke="none" />
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0">
+                    <path d="M8 1l-5 4H1v6h2l5 4V1z" />
+                    <path d="M11 5.5a3 3 0 010 5M13 3.5a6 6 0 010 9" stroke="currentColor" strokeWidth="1.2" fill="none" />
+                  </svg>
+                )}
+                <span className="truncate">{device.name}</span>
+                {device.isDefault && (
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" className="shrink-0 ml-auto">
+                    <path d="M6 10.8L3.2 8l-1 1L6 12.8l8-8-1-1L6 10.8z" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            {audioDevices.length === 0 && (
+              <div className="px-3 py-2 text-[11px] text-n-500">No devices found</div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

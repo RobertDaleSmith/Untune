@@ -1,3 +1,4 @@
+pub mod airplay;
 pub mod import;
 pub mod tracks;
 pub mod playlists;

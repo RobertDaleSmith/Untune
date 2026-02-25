@@ -396,4 +396,55 @@ impl PlaybackState {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().map(|i| i.frequency_data.clone())
     }
+
+    /// Reinitialize the audio output stream to pick up a new default device.
+    /// Saves current playback state and returns info needed to resume on the new stream.
+    /// Returns (track_id, position, was_playing) if a track was active.
+    pub fn reinit_stream(&self) -> Result<Option<(i64, f64, bool)>, String> {
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+        let Some(old) = guard.as_ref() else {
+            return Ok(None);
+        };
+
+        // Save state from old stream
+        let track_id = old.current_track_id;
+        let was_playing = !old.sink.is_paused() && !old.sink.empty();
+        let position = {
+            let elapsed = old
+                .play_started_at
+                .map(|s| s.elapsed().as_secs_f64())
+                .unwrap_or(0.0);
+            old.accumulated_position + elapsed
+        };
+        let volume = old.volume;
+        let queue = old.queue.clone();
+        let queue_index = old.queue_index;
+        let shuffle = old.shuffle;
+        let repeat_mode = old.repeat_mode;
+        let shuffle_history = old.shuffle_history.clone();
+        let shuffle_forward = old.shuffle_forward.clone();
+        let shuffle_next = old.shuffle_next;
+        let duration = old.duration;
+
+        // Drop the old stream by replacing with a new one
+        let mut inner = Self::init_inner()?;
+        inner.volume = volume;
+        inner.sink.set_volume(volume);
+        inner.queue = queue;
+        inner.queue_index = queue_index;
+        inner.shuffle = shuffle;
+        inner.repeat_mode = repeat_mode;
+        inner.shuffle_history = shuffle_history;
+        inner.shuffle_forward = shuffle_forward;
+        inner.shuffle_next = shuffle_next;
+        inner.current_track_id = track_id;
+        inner.duration = duration;
+
+        *guard = Some(inner);
+
+        match track_id {
+            Some(id) => Ok(Some((id, position, was_playing))),
+            None => Ok(None),
+        }
+    }
 }

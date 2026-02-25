@@ -1,4 +1,6 @@
 mod analyzer;
+#[cfg(target_os = "macos")]
+mod airplay;
 mod audio;
 mod commands;
 mod db;
@@ -15,7 +17,7 @@ use media::MediaControlsState;
 use playback::{PlaybackState, RepeatMode};
 use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig};
 use std::sync::Mutex;
-use tauri::{image::Image, Emitter, Manager};
+use tauri::{image::Image, Emitter, Listener, Manager};
 use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 
 #[cfg(target_os = "macos")]
@@ -339,6 +341,41 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             dock_menu::setup_dock_menu(app.handle());
 
+            // Start monitoring for audio output device changes (AirPlay, etc.)
+            // Deferred to a background thread to avoid interfering with souvlaki/media
+            // controls initialization that also happens during setup on the main thread.
+            {
+                let app_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+
+                    #[cfg(target_os = "macos")]
+                    airplay::start_device_monitor(&app_handle);
+
+                    let listener_handle = app_handle.clone();
+                    app_handle.listen("audio-route-changed", move |_event| {
+                        let playback = listener_handle.state::<PlaybackState>();
+                        let db = listener_handle.state::<Database>();
+                        match playback.reinit_stream() {
+                            Ok(Some((track_id, position, was_playing))) if was_playing => {
+                                let conn = db.conn.lock().ok();
+                                let path = conn.and_then(|c| {
+                                    db::get_track_file_info(&c, track_id).ok().flatten()
+                                });
+                                if let Some((file_path, duration)) = path {
+                                    if playback.play(&file_path, track_id, duration).is_ok() {
+                                        if position > 0.5 {
+                                            let _ = playback.seek(position);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    });
+                });
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -491,6 +528,9 @@ pub fn run() {
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,
             commands::playlists::reorder_playlists,
+            commands::airplay::get_audio_route,
+            commands::airplay::get_audio_devices,
+            commands::airplay::set_audio_device,
             set_traffic_lights_visible,
         ])
         .run(tauri::generate_context!())

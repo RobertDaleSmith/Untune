@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { listen } from "@tauri-apps/api/event";
 import { useLibraryStore } from "./libraryStore";
 import {
   getPlaybackInfo,
@@ -17,7 +18,11 @@ import {
   saveViewSettings,
   getPreference,
   setPreference,
+  getAudioRoute,
+  getAudioDevices,
+  setAudioDevice,
 } from "../lib/commands";
+import type { AudioRoute, AudioDevice } from "../lib/commands";
 
 interface PlaybackState {
   currentTrackId: number | null;
@@ -35,6 +40,8 @@ interface PlaybackState {
   _positionSaveTimer: ReturnType<typeof setInterval> | null;
   _errorTimer: ReturnType<typeof setTimeout> | null;
   _restoredFromSession: boolean;
+  audioRoute: AudioRoute | null;
+  audioDevices: AudioDevice[];
 
   showError: (msg: string) => void;
   requestScrollToNowPlaying: () => void;
@@ -51,6 +58,8 @@ interface PlaybackState {
   startPolling: () => void;
   stopPolling: () => void;
   poll: () => Promise<void>;
+  refreshDevices: () => Promise<void>;
+  switchDevice: (deviceId: number) => Promise<void>;
   init: () => Promise<void>;
 }
 
@@ -70,6 +79,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   _positionSaveTimer: null,
   _errorTimer: null,
   _restoredFromSession: false,
+  audioRoute: null,
+  audioDevices: [],
 
   showError: (msg: string) => {
     const prev = get()._errorTimer;
@@ -279,6 +290,28 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set({ _pollTimer: null, _positionSaveTimer: null });
   },
 
+  refreshDevices: async () => {
+    try {
+      const devices = await getAudioDevices();
+      set({ audioDevices: devices });
+    } catch {
+      // Ignore — not available on non-macOS
+    }
+  },
+
+  switchDevice: async (deviceId: number) => {
+    try {
+      await setAudioDevice(deviceId);
+      // Refresh device list and route after switching
+      await get().refreshDevices();
+      const route = await getAudioRoute();
+      set({ audioRoute: route });
+    } catch (e) {
+      const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "Failed to switch device";
+      get().showError(msg);
+    }
+  },
+
   init: async () => {
     try {
       const [trackIdStr, posStr] = await Promise.all([
@@ -298,5 +331,18 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     } catch {
       // Ignore corrupt preferences
     }
+
+    // Fetch initial audio route and device list
+    getAudioRoute()
+      .then((route) => set({ audioRoute: route }))
+      .catch(() => {});
+    get().refreshDevices();
+
+    // Listen for audio route changes (AirPlay device switch, etc.)
+    listen<AudioRoute>("audio-route-changed", (event) => {
+      set({ audioRoute: event.payload });
+      // Refresh device list so isDefault flags update
+      get().refreshDevices();
+    }).catch(() => {});
   },
 }));

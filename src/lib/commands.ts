@@ -250,6 +250,32 @@ export async function applyArtworkFromUrl(
   return invoke<ApplyArtworkResult>("apply_artwork_from_url", { imageUrl, album, artist });
 }
 
+// --- Audio Devices ---
+
+export interface AudioRoute {
+  name: string;
+  isAirplay: boolean;
+}
+
+export interface AudioDevice {
+  id: number;
+  name: string;
+  isAirplay: boolean;
+  isDefault: boolean;
+}
+
+export async function getAudioRoute(): Promise<AudioRoute> {
+  return invoke<AudioRoute>("get_audio_route");
+}
+
+export async function getAudioDevices(): Promise<AudioDevice[]> {
+  return invoke<AudioDevice[]>("get_audio_devices");
+}
+
+export async function setAudioDevice(deviceId: number): Promise<void> {
+  return invoke("set_audio_device", { deviceId });
+}
+
 // --- Frequency data (visualizer) ---
 
 export interface FrequencyData {

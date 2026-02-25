@@ -466,7 +466,7 @@ export function ArtworkLightbox({
           <img
             src="/icon-white.png"
             alt=""
-            className="fixed bottom-4 right-4 w-16 h-16 opacity-20 pointer-events-none z-10"
+            className="fixed bottom-4 right-4 h-16 w-auto opacity-20 pointer-events-none z-10"
           />
         )}
 
@@ -611,7 +611,7 @@ export function ArtworkLightbox({
         <img
           src="/icon-white.png"
           alt=""
-          className="fixed bottom-4 right-4 w-16 h-16 opacity-20 pointer-events-none z-10"
+          className="fixed bottom-4 right-4 h-16 w-auto opacity-20 pointer-events-none z-10"
         />
       )}
 

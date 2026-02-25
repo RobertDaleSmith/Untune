@@ -295,13 +295,29 @@ pub fn update_now_playing(
             None
         });
 
+        // souvlaki's ns_image_from_url crashes with a non-unwinding panic if
+        // NSImage initWithContentsOfURL: returns nil (e.g. bad URL encoding,
+        // missing file). Validate the artwork URL is loadable before passing it.
+        let safe_cover_url = cover_url.filter(|url| {
+            // Quick sanity: must be a file:// URL pointing to an existing file
+            if let Some(path) = url.strip_prefix("file://") {
+                let decoded = path
+                    .replace("%20", " ")
+                    .replace("%23", "#")
+                    .replace("%25", "%");
+                std::path::Path::new(&decoded).exists()
+            } else {
+                false
+            }
+        });
+
         controls
             .set_metadata(MediaMetadata {
                 title: Some(&title),
                 artist: artist.as_deref(),
                 album: album.as_deref(),
                 duration: dur,
-                cover_url: cover_url.as_deref(),
+                cover_url: safe_cover_url.as_deref(),
             })
             .map_err(|e| format!("{:?}", e))?;
 
