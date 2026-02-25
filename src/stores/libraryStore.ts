@@ -6,6 +6,7 @@ interface LibraryState {
   isLoading: boolean;
   isImported: boolean;
   isImporting: boolean;
+  tracksLoading: boolean;
   importError: string | null;
   searchQuery: string;
   searchResults: Track[] | null;
@@ -19,6 +20,7 @@ interface LibraryState {
   setIsLoading: (v: boolean) => void;
   setIsImported: (v: boolean) => void;
   setIsImporting: (v: boolean) => void;
+  setTracksLoading: (v: boolean) => void;
   setImportError: (err: string | null) => void;
   setSearchQuery: (q: string) => void;
   setSearchResults: (results: Track[] | null) => void;
@@ -33,6 +35,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   isLoading: true,
   isImported: false,
   isImporting: false,
+  tracksLoading: false,
   importError: null,
   searchQuery: "",
   searchResults: null,
@@ -42,10 +45,11 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   statusBarTracks: [],
   selectedTrackIds: [],
 
-  setTracks: (tracks) => set({ tracks, isImported: true, isLoading: false }),
+  setTracks: (tracks) => set({ tracks, isImported: true, isLoading: false, tracksLoading: false }),
   setIsLoading: (isLoading) => set({ isLoading }),
   setIsImported: (isImported) => set({ isImported }),
   setIsImporting: (isImporting) => set({ isImporting }),
+  setTracksLoading: (tracksLoading) => set({ tracksLoading }),
   setImportError: (importError) => set({ importError }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setSearchResults: (searchResults) => set({ searchResults }),

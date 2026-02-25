@@ -31,11 +31,15 @@ function App() {
     setTrackCount,
   } = useLibraryStore();
 
+  const tracksLoading = useLibraryStore((s) => s.tracksLoading);
+  const trackCount = useLibraryStore((s) => s.trackCount);
   const navigateTo = useNavigationStore((s) => s.navigateTo);
   const searchResults = useLibraryStore((s) => s.searchResults);
   const showStatusBar = useThemeStore((s) => s.showStatusBar);
   const showAlbumAccent = useThemeStore((s) => s.showAlbumAccent);
   const isMiniPlayer = useThemeStore((s) => s.isMiniPlayer);
+
+  const setTracksLoading = useLibraryStore((s) => s.setTracksLoading);
 
   const loadTracks = useCallback(async () => {
     try {
@@ -44,6 +48,7 @@ function App() {
         setTrackCount(count);
         setIsImported(true);
         setIsLoading(false);
+        setTracksLoading(true);
         const allTracks = await getTracks({
           limit: 200000,
           sortColumn: "id",
@@ -56,8 +61,9 @@ function App() {
     } catch (err) {
       console.error("Failed to load tracks:", err);
       setIsLoading(false);
+      setTracksLoading(false);
     }
-  }, [setTracks, setTrackCount, setIsLoading, setIsImported]);
+  }, [setTracks, setTrackCount, setIsLoading, setIsImported, setTracksLoading]);
 
   useEffect(() => {
     loadTracks();
@@ -341,10 +347,13 @@ function App() {
     // Progress modal auto-dismisses, tracks load in handleImport
   }, []);
 
+  const isDarkSystem = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const splashBg = isDarkSystem ? "#010101" : "#fefefe";
+
   // Loading splash — show logo while checking for existing library
   if (isLoading) {
     return (
-      <div className="h-screen bg-white flex flex-col">
+      <div className="h-screen flex flex-col" style={{ background: splashBg }}>
         <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
         <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
           <WelcomeAnimation />
@@ -355,14 +364,11 @@ function App() {
 
   if (!isImported && !isImporting) {
     return (
-      <div className="h-screen bg-white flex flex-col">
+      <div className="h-screen flex flex-col" style={{ background: splashBg }}>
         {/* Title bar drag region */}
         <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
 
-        {/* Icon video — fills available space */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
-          <WelcomeAnimation />
-        </div>
+        <div className="flex-1" />
 
         {/* Import controls */}
         <div className="flex-shrink-0 pb-12 pt-2 flex flex-col items-center gap-3">
@@ -374,11 +380,17 @@ function App() {
           )}
           <button
             onClick={handleImport}
-            className="px-8 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg font-medium transition-colors text-[15px]"
+            className={`px-8 py-2.5 rounded-lg font-medium transition-colors text-[15px] ${
+              isDarkSystem
+                ? "bg-neutral-100 hover:bg-neutral-200 text-neutral-900"
+                : "bg-neutral-900 hover:bg-neutral-800 text-white"
+            }`}
           >
             Import Library
           </button>
-          <p className="text-neutral-400 text-xs">Import your Apple Music library to get started</p>
+          <p className={`text-xs ${isDarkSystem ? "text-neutral-500" : "text-neutral-400"}`}>
+            Import your Apple Music library to get started
+          </p>
         </div>
       </div>
     );
@@ -431,7 +443,16 @@ function App() {
         <div className="flex flex-1 min-h-0">
           <Sidebar />
           <div className="flex flex-col flex-1 min-w-0">
-            <ContentRouter />
+            {tracksLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 border-[2.5px] border-n-700 border-t-n-300 rounded-full animate-spin" />
+                  <span className="text-n-500 text-xs">Loading {trackCount.toLocaleString()} tracks...</span>
+                </div>
+              </div>
+            ) : (
+              <ContentRouter />
+            )}
             {showStatusBar && <StatusBar />}
           </div>
         </div>

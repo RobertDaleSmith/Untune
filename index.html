@@ -9,7 +9,32 @@
     <title>Waves</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <style>
+        @keyframes spin{to{transform:rotate(360deg)}}
+        html,body{margin:0;padding:0;background:#fefefe}
+        #initial-loader{height:100vh;display:flex;flex-direction:column;align-items:center;background:#fefefe;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+        #initial-loader::before{content:'';flex-shrink:0;height:40px}
+        #initial-loader .content{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+        #initial-loader .icon-dark{display:none}
+        #initial-loader .icon-light{display:block}
+        #initial-loader .spinner{width:28px;height:28px;border:2.5px solid #d4d4d4;border-top-color:#525252;border-radius:50%;animation:spin .8s linear infinite}
+        @media(prefers-color-scheme:dark){
+          html,body{background:#010101}
+          #initial-loader{background:#010101}
+          #initial-loader .icon-dark{display:block}
+          #initial-loader .icon-light{display:none}
+          #initial-loader .spinner{border-color:#404040;border-top-color:#a3a3a3}
+        }
+      </style>
+      <div id="initial-loader">
+        <div class="content">
+          <img class="icon-light" src="/icon-light.png" alt="" width="200" height="200" />
+          <img class="icon-dark" src="/icon-dark.png" alt="" width="200" height="200" />
+          <div class="spinner" style="margin-top:32px"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
