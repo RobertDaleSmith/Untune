@@ -221,7 +221,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
           <div className={`flex items-center gap-2 shrink-0 ${hasTrack ? "pointer-events-auto" : ""}`}>
             <button
               onClick={hasTrack ? toggleShuffle : undefined}
-              className={`p-1.5 transition-colors hidden sm:block ${!hasTrack ? disabledBtn : shuffle ? "text-blue-400" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors hidden sm:block ${!hasTrack ? disabledBtn : shuffle ? "text-accent" : "text-n-500 hover:text-n-200"}`}
               title={shuffle ? "Shuffle on" : "Shuffle off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -263,7 +263,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             </button>
             <button
               onClick={hasTrack ? cycleRepeat : undefined}
-              className={`p-1.5 transition-colors relative hidden sm:block ${!hasTrack ? disabledBtn : repeatMode !== "off" ? "text-blue-400" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors relative hidden sm:block ${!hasTrack ? disabledBtn : repeatMode !== "off" ? "text-accent" : "text-n-500 hover:text-n-200"}`}
               title={repeatMode === "one" ? "Repeat one" : repeatMode === "all" ? "Repeat all" : "Repeat off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -317,7 +317,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             >
               <div className="h-1 bg-n-700 rounded-full relative">
                 <div
-                  className="h-full bg-n-400 group-hover:bg-n-200 rounded-full transition-colors"
+                  className="h-full bg-accent group-hover:bg-accent rounded-full transition-colors"
                   style={{ width: `${Math.min(100, progressPct)}%` }}
                 />
               </div>
@@ -384,7 +384,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
               >
                 <div className="h-1 bg-n-700 rounded-full relative">
                   <div
-                    className="h-full bg-n-400 group-hover:bg-n-200 rounded-full transition-colors"
+                    className="h-full bg-accent group-hover:bg-accent rounded-full transition-colors"
                     style={{ width: `${Math.min(100, volume * 100)}%` }}
                   />
                 </div>

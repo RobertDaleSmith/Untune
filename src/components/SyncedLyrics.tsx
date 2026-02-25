@@ -113,7 +113,7 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
         ref={containerRef}
         className="h-full overflow-y-auto px-6 py-8 scrollbar-hide"
       >
-        <div className="whitespace-pre-wrap text-white/50 text-sm leading-relaxed">
+        <div className="whitespace-pre-wrap text-white/50 text-lg leading-relaxed">
           {state.text}
         </div>
       </div>
@@ -138,8 +138,8 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
             ref={setLineRef(i)}
             className={`py-1.5 transition-all duration-300 ${
               isCurrent
-                ? "text-white text-xl font-semibold opacity-100"
-                : "text-white/30 text-base font-normal"
+                ? "text-white text-2xl font-semibold opacity-100"
+                : "text-white/30 text-lg font-normal"
             }`}
           >
             {line.text}

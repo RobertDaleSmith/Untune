@@ -250,6 +250,18 @@ export async function applyArtworkFromUrl(
   return invoke<ApplyArtworkResult>("apply_artwork_from_url", { imageUrl, album, artist });
 }
 
+// --- Frequency data (visualizer) ---
+
+export interface FrequencyData {
+  bands: number[];
+  waveform: number[];
+  energy: number;
+}
+
+export async function getFrequencyData(): Promise<FrequencyData> {
+  return invoke<FrequencyData>("get_frequency_data");
+}
+
 // --- Lyrics ---
 
 export interface LyricsResult {

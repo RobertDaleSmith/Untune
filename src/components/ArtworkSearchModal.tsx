@@ -189,7 +189,7 @@ export function ArtworkSearchModal({
                   className="group flex flex-col items-center text-center rounded-lg p-1.5 hover:bg-n-800 transition-colors"
                   onClick={() => handleSelect(r)}
                 >
-                  <div className="w-full aspect-square rounded overflow-hidden bg-n-800 ring-2 ring-transparent group-hover:ring-blue-500 transition-all">
+                  <div className="w-full aspect-square rounded overflow-hidden bg-n-800 ring-2 ring-transparent group-hover:ring-accent transition-all">
                     <img
                       src={r.thumbnailUrl}
                       alt={r.albumName}

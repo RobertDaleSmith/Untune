@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use souvlaki::{MediaMetadata, MediaPlayback, MediaPosition};
 use tauri::{AppHandle, State};
 
+use crate::analyzer::FrequencyData;
 use crate::db::{self, Database};
 use crate::media::MediaControlsState;
 use crate::playback::{PlaybackState, RepeatMode};
@@ -331,4 +332,14 @@ pub fn clear_now_playing(
             .map_err(|e| format!("{:?}", e))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_frequency_data(playback: State<'_, PlaybackState>) -> FrequencyData {
+    match playback.frequency_data() {
+        Some(shared) => {
+            shared.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        }
+        None => FrequencyData::default(),
+    }
 }

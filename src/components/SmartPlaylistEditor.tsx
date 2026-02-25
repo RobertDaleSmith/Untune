@@ -384,14 +384,14 @@ function RuleGroupEditor({
       <div className="flex gap-2 mt-1">
         <button
           onClick={addCondition}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          className="text-xs text-accent hover:text-accent transition-colors"
         >
           + Add Rule
         </button>
         {depth < 2 && (
           <button
             onClick={addGroup}
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            className="text-xs text-accent hover:text-accent transition-colors"
           >
             + Add Group
           </button>
@@ -527,7 +527,7 @@ export function SmartPlaylistEditor({
               onChange={(e) => setName(e.target.value)}
               autoFocus
               placeholder="Smart Playlist Name"
-              className="w-full bg-n-800 text-n-200 text-sm rounded px-3 py-1.5 border border-n-700 outline-none focus:border-blue-500"
+              className="w-full bg-n-800 text-n-200 text-sm rounded px-3 py-1.5 border border-n-700 outline-none focus:border-accent"
             />
           </div>
 
@@ -550,7 +550,7 @@ export function SmartPlaylistEditor({
                 type="checkbox"
                 checked={limitEnabled}
                 onChange={(e) => setLimitEnabled(e.target.checked)}
-                className="accent-blue-500"
+                className="accent-accent"
               />
               <span className="text-xs text-n-300">Limit to</span>
             </label>
@@ -604,7 +604,7 @@ export function SmartPlaylistEditor({
           <button
             onClick={handleSave}
             disabled={!name.trim() || saving}
-            className="px-4 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded transition-colors"
+            className="px-4 py-1.5 text-xs bg-accent hover:bg-accent/80 disabled:opacity-50 text-white rounded transition-colors"
           >
             {saving ? "Saving..." : "Save"}
           </button>

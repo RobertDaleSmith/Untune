@@ -2,6 +2,7 @@ use rodio::{OutputStream, OutputStreamHandle, Sink};
 use std::sync::Mutex;
 use std::time::Instant;
 
+use crate::analyzer::{self, SharedFrequencyData};
 use crate::audio::AudioSource;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,6 +28,7 @@ pub struct PlaybackInner {
     shuffle_history: Vec<usize>,
     shuffle_forward: Vec<usize>,
     shuffle_next: Option<usize>,
+    frequency_data: SharedFrequencyData,
 }
 
 // SAFETY: PlaybackInner is only accessed behind a Mutex, so all access is serialized.
@@ -67,6 +69,7 @@ impl PlaybackState {
             shuffle_history: Vec::new(),
             shuffle_forward: Vec::new(),
             shuffle_next: None,
+            frequency_data: analyzer::new_shared_frequency_data(),
         })
     }
 
@@ -90,7 +93,8 @@ impl PlaybackState {
         inner.repeat_mode = repeat_mode;
         inner.shuffle_history = shuffle_history;
         inner.sink.set_volume(volume);
-        inner.sink.append(source);
+        let analyzed = analyzer::AnalyzedSource::new(source, inner.frequency_data.clone());
+        inner.sink.append(analyzed);
         inner.sink.play();
         inner.current_track_id = Some(track_id);
         inner.duration = duration;
@@ -388,4 +392,8 @@ impl PlaybackState {
         Ok(())
     }
 
+    pub fn frequency_data(&self) -> Option<SharedFrequencyData> {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().map(|i| i.frequency_data.clone())
+    }
 }

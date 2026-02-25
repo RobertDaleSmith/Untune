@@ -104,8 +104,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       await win.setResizable(false);
       await win.setAlwaysOnTop(true);
       await setTrafficLightsVisible(false);
-      await win.setMinSize(new LogicalSize(350, 44));
-      await win.setSize(new LogicalSize(350, 44));
+      await win.setMinSize(new LogicalSize(350, 48));
+      await win.setSize(new LogicalSize(350, 48));
     } else {
       await setTrafficLightsVisible(true);
       await win.setAlwaysOnTop(false);

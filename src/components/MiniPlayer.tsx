@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState, useEffect } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useDragRegion } from "../hooks/useDragRegion";
@@ -21,6 +21,15 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
   const prev = usePlaybackStore((s) => s.prev);
   const toggleMiniPlayer = useThemeStore((s) => s.toggleMiniPlayer);
   const progressRef = useRef<HTMLDivElement>(null);
+  const [shiftHeld, setShiftHeld] = useState(false);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(true); };
+    const up = (e: KeyboardEvent) => { if (e.key === "Shift") setShiftHeld(false); };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
 
   const currentTrack = currentTrackId != null
     ? tracks.find((t) => t.id === currentTrackId)
@@ -44,56 +53,12 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
       className="h-screen w-screen bg-n-950 text-n-100 flex flex-col select-none overflow-hidden"
       data-tauri-drag-region
       onMouseDown={onDrag}
+      onContextMenu={(e) => e.preventDefault()}
     >
       {/* Main content row */}
       <div className="flex-1 flex items-center min-h-0">
-        {/* Artwork */}
-        <div className="w-[44px] h-[44px] flex-shrink-0 bg-n-900 flex items-center justify-center overflow-hidden">
-          {currentArtworkUrl ? (
-            <img
-              src={currentArtworkUrl}
-              alt=""
-              className="w-full h-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-n-600">
-              <path d="M9 18V5l12-2v13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="6" cy="18" r="3" stroke="currentColor" strokeWidth="2" />
-              <circle cx="18" cy="16" r="3" stroke="currentColor" strokeWidth="2" />
-            </svg>
-          )}
-        </div>
-
-        {/* Track info */}
-        <div className="flex-1 min-w-0 px-3">
-          {currentTrack ? (
-            <>
-              <div className="text-xs font-medium truncate leading-tight">
-                {currentTrack.title}
-              </div>
-              <div className="text-[10px] text-n-400 truncate leading-tight mt-0.5">
-                {currentTrack.artist}
-              </div>
-            </>
-          ) : (
-            <div className="text-xs text-n-500">Not Playing</div>
-          )}
-        </div>
-
         {/* Transport controls */}
-        <div className="flex items-center gap-2 pr-3 flex-shrink-0">
-          {/* Previous */}
-          <button
-            onClick={(e) => { e.stopPropagation(); prev(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className={currentTrack ? "text-n-400 hover:text-n-200 transition-colors" : "text-n-700 cursor-default"}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M3 2h2v12H3V2zm3 6l8-6v12L6 8z" />
-            </svg>
-          </button>
-
+        <div className="flex items-center gap-1.5 pl-3 flex-shrink-0">
           {/* Play/Pause */}
           <button
             onClick={(e) => { e.stopPropagation(); togglePlayPause(); }}
@@ -115,32 +80,66 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
             )}
           </button>
 
-          {/* Next */}
+          {/* Next (shift = prev) */}
           <button
-            onClick={(e) => { e.stopPropagation(); next(); }}
+            onClick={(e) => { e.stopPropagation(); e.shiftKey ? prev() : next(); }}
             onMouseDown={(e) => e.stopPropagation()}
-            className={currentTrack ? "text-n-400 hover:text-n-200 transition-colors" : "text-n-700 cursor-default"}
+            className={`p-2 ${currentTrack ? "text-n-400 hover:text-n-200 transition-colors" : "text-n-700 cursor-default"}`}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className={shiftHeld ? "scale-x-[-1]" : ""}>
               <path d="M11 2h2v12h-2V2zM2 2l8 6-8 6V2z" />
             </svg>
           </button>
-
-          {/* Expand (exit mini player) */}
-          <button
-            onClick={(e) => { e.stopPropagation(); toggleMiniPlayer(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="text-n-500 hover:text-n-200 transition-colors ml-1"
-            title="Exit Mini Player"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <polyline points="5 1 1 1 1 5" />
-              <polyline points="11 15 15 15 15 11" />
-              <line x1="1" y1="1" x2="6" y2="6" />
-              <line x1="15" y1="15" x2="10" y2="10" />
-            </svg>
-          </button>
         </div>
+
+        {/* Artwork */}
+        <div className="h-full aspect-square flex-shrink-0 bg-n-900 flex items-center justify-center overflow-hidden ml-2">
+          {currentArtworkUrl ? (
+            <img
+              src={currentArtworkUrl}
+              alt=""
+              className="w-full h-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-n-600">
+              <path d="M9 18V5l12-2v13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="6" cy="18" r="3" stroke="currentColor" strokeWidth="2" />
+              <circle cx="18" cy="16" r="3" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          )}
+        </div>
+
+        {/* Track info */}
+        <div className="flex-1 min-w-0 px-2">
+          {currentTrack ? (
+            <>
+              <div className="text-xs font-medium truncate leading-tight">
+                {currentTrack.title}
+              </div>
+              <div className="text-[10px] text-n-400 truncate leading-tight mt-0.5">
+                {currentTrack.artist}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-n-500">Not Playing</div>
+          )}
+        </div>
+
+        {/* Expand (exit mini player) */}
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleMiniPlayer(); }}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="text-n-500 hover:text-n-200 transition-colors flex-shrink-0 px-2"
+          title="Exit Mini Player"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <polyline points="5 1 1 1 1 5" />
+            <polyline points="11 15 15 15 15 11" />
+            <line x1="1" y1="1" x2="6" y2="6" />
+            <line x1="15" y1="15" x2="10" y2="10" />
+          </svg>
+        </button>
       </div>
 
       {/* Progress bar */}
@@ -151,7 +150,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         className="h-1 flex-shrink-0 bg-n-800 cursor-pointer group"
       >
         <div
-          className="h-full bg-n-500 group-hover:bg-n-300 transition-colors"
+          className="h-full bg-accent group-hover:bg-accent transition-colors"
           style={{ width: `${Math.min(100, progressPct)}%` }}
         />
       </div>

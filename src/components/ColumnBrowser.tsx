@@ -24,7 +24,7 @@ function ColumnList({ label, items, selected, onSelect }: ColumnListProps) {
           onClick={() => onSelect(null)}
           className={`w-full text-left px-2 py-0.5 text-xs transition-colors ${
             selected == null
-              ? "bg-blue-600/30 text-blue-200"
+              ? "bg-accent/30 text-accent"
               : "text-n-300 hover:bg-n-800/50"
           }`}
         >
@@ -38,7 +38,7 @@ function ColumnList({ label, items, selected, onSelect }: ColumnListProps) {
             }
             className={`w-full text-left px-2 py-0.5 text-xs truncate transition-colors ${
               selected === item.name
-                ? "bg-blue-600/30 text-blue-200"
+                ? "bg-accent/30 text-accent"
                 : "text-n-300 hover:bg-n-800/50"
             }`}
           >
@@ -181,7 +181,7 @@ export function ColumnBrowser({ tracks }: ColumnBrowserProps) {
       {visible && (
         <div
           onMouseDown={onResizeStart}
-          className="absolute bottom-0 left-0 right-0 h-1 cursor-row-resize z-10 hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
+          className="absolute bottom-0 left-0 right-0 h-1 cursor-row-resize z-10 hover:bg-accent/40 active:bg-accent/60 transition-colors"
         />
       )}
     </div>

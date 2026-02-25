@@ -355,11 +355,11 @@ export function Sidebar() {
     if (!dropTarget || dropTarget.id !== plId) return "";
     switch (dropTarget.position) {
       case "before":
-        return "border-t-2 border-blue-500";
+        return "border-t-2 border-accent";
       case "after":
-        return "border-b-2 border-blue-500";
+        return "border-b-2 border-accent";
       case "inside":
-        return "bg-blue-500/15 border border-blue-500/50 rounded-md";
+        return "bg-accent/15 border border-accent/50 rounded-md";
       default:
         return "";
     }
@@ -382,7 +382,7 @@ export function Sidebar() {
       onContextMenu={(e) => handleContextMenu(e, pl)}
       className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors flex items-center gap-1 ${
         view === "playlist" && playlistId === pl.id
-          ? "bg-n-700/60 text-n-100"
+          ? "bg-accent/20 text-n-100"
           : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
       } ${dragId === pl.id ? "opacity-50" : ""} ${getDropIndicatorClass(pl.id)}`}
       style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: "8px" }}
@@ -446,7 +446,7 @@ export function Sidebar() {
             onClick={() => navigateTo(item.view)}
             className={`w-full text-left px-2 py-1 text-sm rounded-md transition-colors ${
               view === item.view
-                ? "bg-n-700/60 text-n-100"
+                ? "bg-accent/20 text-n-100"
                 : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
             }`}
           >
@@ -510,7 +510,7 @@ export function Sidebar() {
           trackId={currentTrackId}
           artworkUrl={artworkUrl}
           originRect={lightboxRect}
-          trackInfo={currentTrack ? { title: currentTrack.title, artist: currentTrack.artist, album: currentTrack.album } : undefined}
+          trackInfo={currentTrack ? { title: currentTrack.title, artist: currentTrack.artist, album: currentTrack.album, year: currentTrack.year } : undefined}
           duration={currentTrack?.duration ?? null}
           onClose={() => setLightboxOpen(false)}
         />

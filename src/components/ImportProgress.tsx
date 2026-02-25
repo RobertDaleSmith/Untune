@@ -49,7 +49,7 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
       <div className="shrink-0 bg-n-900/95 border-b border-n-700 px-4 py-2 flex items-center gap-3">
         <div className="flex items-center gap-2 text-sm text-n-300 whitespace-nowrap">
           {!isDone && (
-            <svg className="animate-spin h-3.5 w-3.5 text-blue-400" viewBox="0 0 24 24" fill="none">
+            <svg className="animate-spin h-3.5 w-3.5 text-accent" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
@@ -59,13 +59,13 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
         <div className="flex-1 bg-n-800 rounded-full h-1.5 overflow-hidden">
           {hasDeterminate ? (
             <div
-              className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+              className="bg-accent h-1.5 rounded-full transition-all duration-300"
               style={{ width: `${pct}%` }}
             />
           ) : !isDone ? (
-            <div className="h-1.5 rounded-full bg-blue-500 animate-indeterminate" />
+            <div className="h-1.5 rounded-full bg-accent animate-indeterminate" />
           ) : (
-            <div className="bg-blue-500 h-1.5 rounded-full w-full" />
+            <div className="bg-accent h-1.5 rounded-full w-full" />
           )}
         </div>
         {hasDeterminate && (
@@ -88,13 +88,13 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
         <div className="w-full bg-n-800 rounded-full h-2 mb-2 overflow-hidden">
           {hasDeterminate ? (
             <div
-              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+              className="bg-accent h-2 rounded-full transition-all duration-300"
               style={{ width: `${pct}%` }}
             />
           ) : !isDone ? (
-            <div className="h-2 rounded-full bg-blue-500 animate-indeterminate" />
+            <div className="h-2 rounded-full bg-accent animate-indeterminate" />
           ) : (
-            <div className="bg-blue-500 h-2 rounded-full w-full" />
+            <div className="bg-accent h-2 rounded-full w-full" />
           )}
         </div>
         {hasDeterminate && (

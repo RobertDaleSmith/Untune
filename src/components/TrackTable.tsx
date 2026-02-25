@@ -478,8 +478,8 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                       onMouseDown={header.getResizeHandler()}
                       onTouchStart={header.getResizeHandler()}
                       onClick={(e) => e.stopPropagation()}
-                      className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-blue-500 ${
-                        header.column.getIsResizing() ? "bg-blue-500" : ""
+                      className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-accent ${
+                        header.column.getIsResizing() ? "bg-accent" : ""
                       }`}
                     />
                   )}
@@ -510,9 +510,9 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                   isCurrentTrack
                     ? `bg-accent-row hover:bg-accent-row-hover${isFlashing ? " animate-row-flash" : ""}`
                     : isSelected
-                      ? "bg-n-800/70"
+                      ? "bg-accent/15"
                       : "hover:bg-n-800/50"
-                }${isSelected ? " ring-1 ring-n-600" : ""}`}
+                }${isSelected ? " ring-1 ring-accent/30" : ""}`}
                 style={{ height: `${ROW_HEIGHT}px` }}
               >
                 {row.getVisibleCells().map((cell) => (

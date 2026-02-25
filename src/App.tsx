@@ -13,6 +13,7 @@ import { ContentRouter } from "./components/ContentRouter";
 import { StatusBar } from "./components/StatusBar";
 import { useDragRegion } from "./hooks/useDragRegion";
 import { MiniPlayer } from "./components/MiniPlayer";
+import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
 
 function App() {
   const onDrag = useDragRegion();
@@ -335,6 +336,56 @@ function App() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [currentTrackId, tracks]);
+
+  // Extract accent color from artwork and set CSS custom properties
+  const theme = useThemeStore((s) => s.theme);
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    // Resolve actual dark/light from current DOM state
+    const getIsDark = () => root.getAttribute("data-theme") !== "light";
+
+    const setNeutral = (isDark: boolean) => {
+      if (isDark) {
+        root.style.setProperty("--color-accent", "rgb(255 255 255)");
+        root.style.setProperty("--accent-row", "rgba(255,255,255,0.18)");
+        root.style.setProperty("--accent-row-hover", "rgba(255,255,255,0.24)");
+      } else {
+        root.style.setProperty("--color-accent", "rgb(64 64 64)");
+        root.style.setProperty("--accent-row", "rgba(0,0,0,0.10)");
+        root.style.setProperty("--accent-row-hover", "rgba(0,0,0,0.15)");
+      }
+    };
+
+    if (!showAlbumAccent || !currentArtworkUrl) {
+      setNeutral(getIsDark());
+      return;
+    }
+
+    const applyColor = (isDark: boolean, r: number, g: number, b: number) => {
+      root.style.setProperty("--color-accent", adjustForTheme([r, g, b], isDark));
+      if (isDark) {
+        root.style.setProperty("--accent-row", `rgba(${r},${g},${b},0.18)`);
+        root.style.setProperty("--accent-row-hover", `rgba(${r},${g},${b},0.24)`);
+      } else {
+        root.style.setProperty("--accent-row", `rgba(${r},${g},${b},0.12)`);
+        root.style.setProperty("--accent-row-hover", `rgba(${r},${g},${b},0.18)`);
+      }
+    };
+
+    let cancelled = false;
+    extractAccentColor(currentArtworkUrl).then((color) => {
+      if (cancelled) return;
+      const isDark = getIsDark();
+      if (color) {
+        applyColor(isDark, color[0], color[1], color[2]);
+      } else {
+        setNeutral(isDark);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [currentArtworkUrl, showAlbumAccent, theme]);
 
   // Blurred background crossfade state
   const [bgReady, setBgReady] = useState(false);

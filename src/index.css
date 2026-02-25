@@ -14,6 +14,7 @@
   --color-n-950: var(--n-950);
   --color-accent-row: var(--accent-row);
   --color-accent-row-hover: var(--accent-row-hover);
+  --color-accent: #60a5fa;
 }
 
 /* Dark theme (default) */

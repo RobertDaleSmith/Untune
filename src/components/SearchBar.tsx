@@ -111,7 +111,7 @@ export function SearchBar() {
       <div className="relative">
         <button
           onClick={closeOverlay}
-          className={`p-1 transition-colors ${searchQuery ? "text-blue-400" : "text-n-300"}`}
+          className={`p-1 transition-colors ${searchQuery ? "text-accent" : "text-n-300"}`}
           title={placeholder}
         >
           <SearchIcon />

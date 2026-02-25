@@ -1,3 +1,4 @@
+mod analyzer;
 mod audio;
 mod commands;
 mod db;
@@ -470,6 +471,7 @@ pub fn run() {
             commands::playback::save_view_settings,
             commands::playback::update_now_playing,
             commands::playback::clear_now_playing,
+            commands::playback::get_frequency_data,
             commands::browse::get_albums,
             commands::browse::get_artists,
             commands::browse::get_genres,
