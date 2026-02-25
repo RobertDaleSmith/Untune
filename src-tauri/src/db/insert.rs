@@ -82,13 +82,29 @@ pub fn insert_playlist(
     parent_id: Option<i64>,
     sort_order: i32,
     track_count: i32,
+    rules_json: Option<&str>,
 ) -> Result<i64, rusqlite::Error> {
     conn.execute(
-        "INSERT OR REPLACE INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![persistent_id, name, is_smart as i32, is_folder as i32, parent_id, sort_order, track_count],
+        "INSERT INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(persistent_id) DO UPDATE SET
+           name = excluded.name,
+           is_smart = excluded.is_smart,
+           is_folder = excluded.is_folder,
+           parent_id = excluded.parent_id,
+           sort_order = excluded.sort_order,
+           track_count = excluded.track_count,
+           rules_json = excluded.rules_json",
+        rusqlite::params![persistent_id, name, is_smart as i32, is_folder as i32, parent_id, sort_order, track_count, rules_json],
     )?;
-    Ok(conn.last_insert_rowid())
+    // ON CONFLICT DO UPDATE doesn't reliably set last_insert_rowid for updates,
+    // so query the actual id.
+    let id: i64 = conn.query_row(
+        "SELECT id FROM playlists WHERE persistent_id = ?1",
+        rusqlite::params![persistent_id],
+        |row| row.get(0),
+    )?;
+    Ok(id)
 }
 
 pub fn insert_playlist_tracks(
@@ -111,11 +127,127 @@ pub fn insert_playlist_tracks(
 }
 
 pub fn clear_tracks(conn: &Connection) -> Result<(), rusqlite::Error> {
+    // Preserve user-created smart playlists (persistent_id starts with 'waves-')
     conn.execute_batch(
-        "DELETE FROM playlist_tracks;
-         DELETE FROM playlists;
+        "DELETE FROM playlist_tracks WHERE playlist_id IN (SELECT id FROM playlists WHERE persistent_id NOT LIKE 'waves-%');
+         DELETE FROM playlists WHERE persistent_id NOT LIKE 'waves-%';
          DELETE FROM tracks;
          DELETE FROM tracks_fts;",
     )?;
+    Ok(())
+}
+
+pub fn insert_smart_playlist(
+    conn: &Connection,
+    name: &str,
+    rules_json: &str,
+    parent_id: Option<i64>,
+) -> Result<i64, rusqlite::Error> {
+    let persistent_id = format!(
+        "waves-sp-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+    conn.execute(
+        "INSERT INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json)
+         VALUES (?1, ?2, 1, 0, ?3, 0, 0, ?4)",
+        rusqlite::params![persistent_id, name, parent_id, rules_json],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_smart_playlist(
+    conn: &Connection,
+    id: i64,
+    name: Option<&str>,
+    rules_json: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    if let Some(n) = name {
+        conn.execute("UPDATE playlists SET name = ? WHERE id = ?", rusqlite::params![n, id])?;
+    }
+    if let Some(rj) = rules_json {
+        conn.execute("UPDATE playlists SET rules_json = ? WHERE id = ?", rusqlite::params![rj, id])?;
+    }
+    Ok(())
+}
+
+pub fn delete_playlist(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", rusqlite::params![id])?;
+    conn.execute("DELETE FROM playlists WHERE id = ?", rusqlite::params![id])?;
+    Ok(())
+}
+
+pub fn insert_regular_playlist(
+    conn: &Connection,
+    name: &str,
+    parent_id: Option<i64>,
+) -> Result<i64, rusqlite::Error> {
+    let persistent_id = format!(
+        "waves-pl-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+    conn.execute(
+        "INSERT INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json)
+         VALUES (?1, ?2, 0, 0, ?3, 0, 0, NULL)",
+        rusqlite::params![persistent_id, name, parent_id],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn insert_playlist_folder(
+    conn: &Connection,
+    name: &str,
+    parent_id: Option<i64>,
+) -> Result<i64, rusqlite::Error> {
+    let persistent_id = format!(
+        "waves-folder-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+    conn.execute(
+        "INSERT INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json)
+         VALUES (?1, ?2, 0, 1, ?3, 0, 0, NULL)",
+        rusqlite::params![persistent_id, name, parent_id],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn add_tracks_to_playlist(
+    conn: &Connection,
+    playlist_id: i64,
+    track_ids: &[i64],
+) -> Result<(), rusqlite::Error> {
+    // Get the max existing position
+    let max_pos: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?",
+        rusqlite::params![playlist_id],
+        |row| row.get(0),
+    )?;
+
+    let mut stmt = conn.prepare(
+        "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+    )?;
+    for (i, track_id) in track_ids.iter().enumerate() {
+        stmt.execute(rusqlite::params![playlist_id, track_id, max_pos + 1 + i as i64])?;
+    }
+
+    // Update track count
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?",
+        rusqlite::params![playlist_id],
+        |row| row.get(0),
+    )?;
+    conn.execute(
+        "UPDATE playlists SET track_count = ? WHERE id = ?",
+        rusqlite::params![count, playlist_id],
+    )?;
+
     Ok(())
 }

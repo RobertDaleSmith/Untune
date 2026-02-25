@@ -2,6 +2,7 @@ pub mod jxa;
 pub mod scanner;
 pub mod matcher;
 pub mod artwork;
+pub mod smart_criteria;
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -127,6 +128,13 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
 
     // Phase 5: Playlist extraction
     emit_progress(app, "playlists", "Extracting playlists...", 0, 1);
+
+    // Extract smart playlist rules from Library.xml (best-effort)
+    let smart_rules = smart_criteria::extract_smart_rules().unwrap_or_default();
+    if !smart_rules.is_empty() {
+        log::info!("Loaded smart rules for {} playlists from Library.xml", smart_rules.len());
+    }
+
     match jxa::extract_playlists(&scripts_dir) {
         Ok(playlists) => {
             let playlist_count = playlists.len() as u64;
@@ -174,6 +182,7 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
                         parent_db_id,
                         *orig_idx as i32,
                         0,
+                        None,
                     )
                     .map_err(|e| format!("Folder insert failed: {}", e))?;
 
@@ -184,6 +193,7 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
             }
 
             // Pass 2: Insert regular playlists
+            let mut smart_imported = 0u64;
             for (idx, playlist) in playlists.iter().enumerate() {
                 if playlist.is_folder {
                     continue;
@@ -191,6 +201,16 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
 
                 let parent_db_id = playlist.parent_persistent_id.as_ref()
                     .and_then(|ppid| pid_to_db_id.get(ppid).copied());
+
+                // Look up smart playlist rules from Library.xml
+                let rules_json = if playlist.is_smart {
+                    smart_rules.get(&playlist.persistent_id).map(|s| s.as_str())
+                } else {
+                    None
+                };
+                if rules_json.is_some() {
+                    smart_imported += 1;
+                }
 
                 let track_count = playlist.track_persistent_ids.len() as i32;
                 let pl_id = db::insert_playlist(
@@ -202,10 +222,17 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
                     parent_db_id,
                     idx as i32,
                     track_count,
+                    rules_json,
                 )
                 .map_err(|e| format!("Playlist insert failed: {}", e))?;
 
                 pid_to_db_id.insert(playlist.persistent_id.clone(), pl_id);
+
+                // For smart playlists with rules, skip static track insertion
+                // (tracks will be dynamically evaluated from rules)
+                if rules_json.is_some() {
+                    continue;
+                }
 
                 // Resolve persistent IDs to track IDs
                 let track_entries: Vec<(i64, i32)> = playlist
@@ -227,8 +254,8 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
                 let _ = db::insert_playlist_tracks(&mut conn, pl_id, &track_entries);
             }
             emit_progress(app, "playlists", &format!("Imported {} playlists", playlist_count), 1, 1);
-            log::info!("Imported {} playlists ({} folders)", playlist_count,
-                playlists.iter().filter(|p| p.is_folder).count());
+            log::info!("Imported {} playlists ({} folders, {} with smart rules)", playlist_count,
+                playlists.iter().filter(|p| p.is_folder).count(), smart_imported);
         }
         Err(e) => {
             log::warn!("Playlist extraction failed (non-fatal): {}", e);

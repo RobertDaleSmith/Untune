@@ -11,6 +11,7 @@ pub struct Playlist {
     pub parent_id: Option<i64>,
     pub sort_order: i32,
     pub track_count: i32,
+    pub rules_json: Option<String>,
 }
 
 /// JXA playlist extraction output

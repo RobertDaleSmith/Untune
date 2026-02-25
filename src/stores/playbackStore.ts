@@ -18,6 +18,7 @@ import {
 
 interface PlaybackState {
   currentTrackId: number | null;
+  currentArtworkUrl: string | null;
   isPlaying: boolean;
   position: number;
   duration: number | null;
@@ -25,8 +26,13 @@ interface PlaybackState {
   shuffle: boolean;
   repeatMode: string;
   queueSource: string | null;
+  playError: string | null;
+  scrollToNowPlaying: number;
   _pollTimer: ReturnType<typeof setInterval> | null;
+  _errorTimer: ReturnType<typeof setTimeout> | null;
 
+  showError: (msg: string) => void;
+  requestScrollToNowPlaying: () => void;
   play: (trackIds: number[], startIndex: number, source?: string) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -44,6 +50,7 @@ interface PlaybackState {
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   currentTrackId: null,
+  currentArtworkUrl: null,
   isPlaying: false,
   position: 0,
   duration: null,
@@ -51,30 +58,49 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   shuffle: false,
   repeatMode: "off",
   queueSource: null,
+  playError: null,
+  scrollToNowPlaying: 0,
   _pollTimer: null,
+  _errorTimer: null,
+
+  showError: (msg: string) => {
+    const prev = get()._errorTimer;
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => set({ playError: null, _errorTimer: null }), 5000);
+    set({ playError: msg, _errorTimer: timer });
+  },
+
+  requestScrollToNowPlaying: () => set((s) => ({ scrollToNowPlaying: s.scrollToNowPlaying + 1 })),
 
   play: async (trackIds, startIndex, source) => {
     const newSource = source ?? null;
+    let viewSettings: { shuffle: boolean; repeatMode: string } | null = null;
     if (newSource && newSource !== get().queueSource) {
       try {
-        const settings = await getViewSettings(newSource);
-        if (settings) {
-          await setShuffleCmd(settings.shuffle);
-          await setRepeatModeCmd(settings.repeatMode);
-          set({ shuffle: settings.shuffle, repeatMode: settings.repeatMode });
-        }
+        viewSettings = await getViewSettings(newSource);
       } catch {
         // Use current settings
       }
     }
     set({ queueSource: newSource });
-    await playQueue(trackIds, startIndex);
-    set({
-      currentTrackId: trackIds[startIndex],
-      isPlaying: true,
-      position: 0,
-    });
-    get().startPolling();
+    try {
+      await playQueue(trackIds, startIndex);
+      set({
+        currentTrackId: trackIds[startIndex],
+        isPlaying: true,
+        position: 0,
+      });
+      // Apply view settings after playback started (PlaybackInner now exists)
+      if (viewSettings) {
+        await setShuffleCmd(viewSettings.shuffle);
+        await setRepeatModeCmd(viewSettings.repeatMode);
+        set({ shuffle: viewSettings.shuffle, repeatMode: viewSettings.repeatMode });
+      }
+      get().startPolling();
+    } catch (e) {
+      const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "Playback failed";
+      get().showError(msg);
+    }
   },
 
   pause: async () => {
@@ -160,6 +186,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     try {
       const prev = get();
       const info = await getPlaybackInfo();
+      // If polling was stopped while this poll was in-flight, discard stale result
+      if (get()._pollTimer === null) return;
       set({
         isPlaying: info.isPlaying,
         currentTrackId: info.trackId,
@@ -169,8 +197,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         shuffle: info.shuffle,
         repeatMode: info.repeatMode,
       });
-      // Track ended naturally: was playing, now stopped but track still set
-      if (prev.isPlaying && !info.isPlaying && info.trackId != null) {
+      // Track ended naturally: was playing, now stopped (not paused) but track still set
+      if (prev.isPlaying && !info.isPlaying && !info.isPaused && info.trackId != null) {
         const trackId = await nextTrack();
         if (trackId != null) {
           set({ currentTrackId: trackId, position: 0, isPlaying: true });

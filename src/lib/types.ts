@@ -44,6 +44,17 @@ export interface Playlist {
   parentId: number | null;
   sortOrder: number;
   trackCount: number;
+  rulesJson: string | null;
+}
+
+export type RuleEntry =
+  | { field: string; op: string; value?: unknown }
+  | { match: "all" | "any"; rules: RuleEntry[] };
+
+export interface SmartPlaylistRules {
+  match: "all" | "any";
+  rules: RuleEntry[];
+  limit?: { count: number; sortBy: string; sortDir: "asc" | "desc" };
 }
 
 export interface ImportProgress {
@@ -87,6 +98,7 @@ export interface AlbumSummary {
   trackCount: number;
   totalDuration: number;
   year: number | null;
+  artworkHash: string | null;
 }
 
 export interface ArtistSummary {

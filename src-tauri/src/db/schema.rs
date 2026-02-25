@@ -5,6 +5,7 @@ fn migrate_playlists(conn: &Connection) {
     let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN is_folder INTEGER DEFAULT 0");
     let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN parent_id INTEGER REFERENCES playlists(id)");
     let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN sort_order INTEGER DEFAULT 0");
+    let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN rules_json TEXT");
 }
 
 pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {

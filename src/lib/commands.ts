@@ -161,3 +161,38 @@ export async function getPreference(key: string): Promise<string | null> {
 export async function setPreference(key: string, value: string): Promise<void> {
   return invoke("set_preference", { key, value });
 }
+
+export async function createSmartPlaylist(
+  name: string,
+  rulesJson: string,
+  parentId?: number | null,
+): Promise<number> {
+  return invoke<number>("create_smart_playlist", { name, rulesJson, parentId });
+}
+
+export async function updateSmartPlaylist(
+  playlistId: number,
+  name?: string | null,
+  rulesJson?: string | null,
+): Promise<void> {
+  return invoke("update_smart_playlist", { playlistId, name, rulesJson });
+}
+
+export async function deletePlaylist(playlistId: number): Promise<void> {
+  return invoke("delete_playlist", { playlistId });
+}
+
+export async function createPlaylist(
+  name: string,
+  parentId?: number | null,
+  trackIds?: number[] | null,
+): Promise<number> {
+  return invoke<number>("create_playlist", { name, parentId, trackIds });
+}
+
+export async function createPlaylistFolder(
+  name: string,
+  parentId?: number | null,
+): Promise<number> {
+  return invoke<number>("create_playlist_folder", { name, parentId });
+}

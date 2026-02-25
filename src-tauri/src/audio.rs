@@ -152,6 +152,9 @@ impl AudioSource {
                     sample_buf.copy_interleaved_ref(decoded);
                     self.buffer = sample_buf.samples().to_vec();
                     self.buffer_offset = 0;
+                    if self.buffer.is_empty() {
+                        continue; // skip empty decoded packets
+                    }
                     return true;
                 }
                 Err(SymphError::DecodeError(_)) => continue,

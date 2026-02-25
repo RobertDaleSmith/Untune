@@ -7,6 +7,7 @@ mod import;
 pub mod media;
 mod models;
 mod playback;
+mod smart_playlists;
 
 use db::Database;
 use media::MediaControlsState;
@@ -27,6 +28,11 @@ struct ViewMenuItems {
     show_album_accent: CheckMenuItem<tauri::Wry>,
     status_bar_on: std::sync::atomic::AtomicBool,
     album_accent_on: std::sync::atomic::AtomicBool,
+    col_browser_visible: CheckMenuItem<tauri::Wry>,
+    col_browser_genres: CheckMenuItem<tauri::Wry>,
+    col_browser_artists: CheckMenuItem<tauri::Wry>,
+    col_browser_albums: CheckMenuItem<tauri::Wry>,
+    col_browser_album_artist: CheckMenuItem<tauri::Wry>,
 }
 
 pub struct PlaybackMenuItems {
@@ -60,6 +66,18 @@ pub fn run() {
             let saved_album_accent = {
                 let conn = db.conn.lock().unwrap();
                 db::get_preference(&conn, "showAlbumAccent").ok().flatten()
+            };
+            let saved_col_browser = {
+                let conn = db.conn.lock().unwrap();
+                db::get_preference(&conn, "columnBrowserVisible").ok().flatten()
+            };
+            let saved_col_columns = {
+                let conn = db.conn.lock().unwrap();
+                db::get_preference(&conn, "columnBrowserColumns").ok().flatten()
+            };
+            let saved_col_album_artist = {
+                let conn = db.conn.lock().unwrap();
+                db::get_preference(&conn, "columnBrowserAlbumArtist").ok().flatten()
             };
 
             app.manage(db);
@@ -95,6 +113,31 @@ pub fn run() {
                 .checked(album_accent_default)
                 .build(handle)?;
 
+            // Column browser menu items
+            let col_browser_default = saved_col_browser.as_deref() == Some("true");
+            let col_cols: Vec<String> = saved_col_columns
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                .unwrap_or_else(|| vec!["genres".into(), "artists".into(), "albums".into()]);
+            let col_aa_default = saved_col_album_artist.as_deref() == Some("true");
+
+            let col_browser_visible = CheckMenuItemBuilder::with_id("col-browser-visible", "Show Column Browser")
+                .accelerator("CmdOrCtrl+B")
+                .checked(col_browser_default)
+                .build(handle)?;
+            let col_browser_genres = CheckMenuItemBuilder::with_id("col-browser-genres", "Genres")
+                .checked(col_cols.contains(&"genres".to_string()))
+                .build(handle)?;
+            let col_browser_artists = CheckMenuItemBuilder::with_id("col-browser-artists", "Artists")
+                .checked(col_cols.contains(&"artists".to_string()))
+                .build(handle)?;
+            let col_browser_albums = CheckMenuItemBuilder::with_id("col-browser-albums", "Albums")
+                .checked(col_cols.contains(&"albums".to_string()))
+                .build(handle)?;
+            let col_browser_album_artist = CheckMenuItemBuilder::with_id("col-browser-album-artist", "Use Album Artist")
+                .checked(col_aa_default)
+                .build(handle)?;
+
             // Playback menu items
             let pb_shuffle = CheckMenuItemBuilder::with_id("pb-shuffle", "Shuffle")
                 .build(handle)?;
@@ -120,6 +163,20 @@ pub fn run() {
                         .quit()
                         .build()?,
                     &SubmenuBuilder::new(handle, "File")
+                        .item(&SubmenuBuilder::new(handle, "New")
+                            .item(&MenuItemBuilder::with_id("new-playlist", "Playlist")
+                                .accelerator("CmdOrCtrl+N")
+                                .build(handle)?)
+                            .item(&MenuItemBuilder::with_id("new-playlist-from-selection", "Playlist from Selection")
+                                .accelerator("CmdOrCtrl+Shift+N")
+                                .build(handle)?)
+                            .item(&MenuItemBuilder::with_id("new-smart-playlist", "Smart Playlist")
+                                .accelerator("CmdOrCtrl+Alt+N")
+                                .build(handle)?)
+                            .item(&MenuItemBuilder::with_id("new-playlist-folder", "Playlist Folder")
+                                .build(handle)?)
+                            .build()?)
+                        .separator()
                         .item(&MenuItemBuilder::with_id("reimport", "Re-import Library")
                             .accelerator("CmdOrCtrl+Shift+I")
                             .build(handle)?)
@@ -144,6 +201,20 @@ pub fn run() {
                         .separator()
                         .item(&show_status_bar)
                         .item(&show_album_accent)
+                        .separator()
+                        .item(&SubmenuBuilder::new(handle, "Column Browser")
+                            .item(&col_browser_visible)
+                            .separator()
+                            .item(&col_browser_genres)
+                            .item(&col_browser_artists)
+                            .item(&col_browser_albums)
+                            .separator()
+                            .item(&col_browser_album_artist)
+                            .build()?)
+                        .separator()
+                        .item(&MenuItemBuilder::with_id("toggle-mini-player", "Mini Player")
+                            .accelerator("CmdOrCtrl+Shift+M")
+                            .build(handle)?)
                         .build()?,
                     &SubmenuBuilder::new(handle, "Controls")
                         .item(&MenuItemBuilder::with_id("pb-toggle", "Play/Pause")
@@ -164,10 +235,10 @@ pub fn run() {
                             .build(handle)?)
                         .separator()
                         .item(&MenuItemBuilder::with_id("pb-vol-up", "Volume Up")
-                            .accelerator("CmdOrCtrl+Up")
+                            .accelerator("CmdOrCtrl+Shift+Up")
                             .build(handle)?)
                         .item(&MenuItemBuilder::with_id("pb-vol-down", "Volume Down")
-                            .accelerator("CmdOrCtrl+Down")
+                            .accelerator("CmdOrCtrl+Shift+Down")
                             .build(handle)?)
                         .separator()
                         .item(&pb_shuffle)
@@ -197,6 +268,11 @@ pub fn run() {
                 show_album_accent,
                 status_bar_on: std::sync::atomic::AtomicBool::new(status_bar_default),
                 album_accent_on: std::sync::atomic::AtomicBool::new(album_accent_default),
+                col_browser_visible,
+                col_browser_genres,
+                col_browser_artists,
+                col_browser_albums,
+                col_browser_album_artist,
             });
 
             app.manage(PlaybackMenuItems {
@@ -254,6 +330,11 @@ pub fn run() {
                 "reimport" => {
                     let _ = app.emit("menu-reimport", ());
                 }
+                "new-playlist" => { let _ = app.emit("menu-new-playlist", ()); }
+                "new-playlist-from-selection" => { let _ = app.emit("menu-new-playlist-from-selection", ()); }
+                "new-smart-playlist" => { let _ = app.emit("menu-new-smart-playlist", ()); }
+                "new-playlist-folder" => { let _ = app.emit("menu-new-playlist-folder", ()); }
+                "toggle-mini-player" => { let _ = app.emit("toggle-mini-player", ()); }
                 "pb-toggle" => { let _ = app.emit("media-toggle", ()); }
                 "pb-goto" => { let _ = app.emit("media-goto-current", ()); }
                 "pb-stop" => { let _ = app.emit("media-stop", ()); }
@@ -284,6 +365,31 @@ pub fn run() {
                     items.album_accent_on.store(now, std::sync::atomic::Ordering::Relaxed);
                     let _ = items.show_album_accent.set_checked(now);
                     let _ = app.emit("toggle-album-accent", now);
+                }
+                "col-browser-visible" => {
+                    let items = app.state::<ViewMenuItems>();
+                    let checked = items.col_browser_visible.is_checked().unwrap_or(false);
+                    let _ = app.emit("col-browser-toggle", checked);
+                }
+                "col-browser-genres" => {
+                    let items = app.state::<ViewMenuItems>();
+                    let checked = items.col_browser_genres.is_checked().unwrap_or(false);
+                    let _ = app.emit("col-browser-column", serde_json::json!({"column": "genres", "enabled": checked}).to_string());
+                }
+                "col-browser-artists" => {
+                    let items = app.state::<ViewMenuItems>();
+                    let checked = items.col_browser_artists.is_checked().unwrap_or(false);
+                    let _ = app.emit("col-browser-column", serde_json::json!({"column": "artists", "enabled": checked}).to_string());
+                }
+                "col-browser-albums" => {
+                    let items = app.state::<ViewMenuItems>();
+                    let checked = items.col_browser_albums.is_checked().unwrap_or(false);
+                    let _ = app.emit("col-browser-column", serde_json::json!({"column": "albums", "enabled": checked}).to_string());
+                }
+                "col-browser-album-artist" => {
+                    let items = app.state::<ViewMenuItems>();
+                    let checked = items.col_browser_album_artist.is_checked().unwrap_or(false);
+                    let _ = app.emit("col-browser-album-artist", checked);
                 }
                 "pb-shuffle" => {
                     let items = app.state::<PlaybackMenuItems>();
@@ -349,6 +455,11 @@ pub fn run() {
             commands::artwork::get_track_all_artworks,
             commands::preferences::get_preference,
             commands::preferences::set_preference,
+            commands::playlists::create_smart_playlist,
+            commands::playlists::update_smart_playlist,
+            commands::playlists::delete_playlist,
+            commands::playlists::create_playlist,
+            commands::playlists::create_playlist_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,13 +1,10 @@
 import { formatTotalDuration, formatNumber, formatFileSize } from "../utils/formatters";
 import { useDragRegion } from "../hooks/useDragRegion";
-import type { Track } from "../lib/types";
+import { useLibraryStore } from "../stores/libraryStore";
 
-interface StatusBarProps {
-  tracks: Track[];
-}
-
-export function StatusBar({ tracks }: StatusBarProps) {
+export function StatusBar() {
   const onDrag = useDragRegion();
+  const tracks = useLibraryStore((s) => s.statusBarTracks);
   const totalDuration = tracks.reduce(
     (sum, t) => sum + (t.duration ?? 0),
     0,

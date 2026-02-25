@@ -18,15 +18,22 @@ interface NavigationState {
   albumArtist: string | null;
   artistName: string | null;
   genreName: string | null;
+  sidebarRefresh: number;
+  detailVersion: number;
+  scrollPositions: Record<string, number>;
 
   navigateTo: (view: View) => void;
   navigateToPlaylist: (id: number, name: string) => void;
   navigateToAlbum: (album: string, artist: string | null) => void;
   navigateToArtist: (name: string) => void;
   navigateToGenre: (name: string) => void;
+  requestSidebarRefresh: () => void;
+  requestDetailRefresh: () => void;
+  saveScrollPosition: (view: string, position: number) => void;
+  getScrollPosition: (view: string) => number;
 }
 
-export const useNavigationStore = create<NavigationState>((set) => ({
+export const useNavigationStore = create<NavigationState>((set, get) => ({
   view: "songs",
   playlistId: null,
   playlistName: null,
@@ -34,6 +41,9 @@ export const useNavigationStore = create<NavigationState>((set) => ({
   albumArtist: null,
   artistName: null,
   genreName: null,
+  sidebarRefresh: 0,
+  detailVersion: 0,
+  scrollPositions: {},
 
   navigateTo: (view) => set({ view }),
 
@@ -48,4 +58,15 @@ export const useNavigationStore = create<NavigationState>((set) => ({
 
   navigateToGenre: (name) =>
     set({ view: "genre-detail", genreName: name }),
+
+  requestSidebarRefresh: () =>
+    set((s) => ({ sidebarRefresh: s.sidebarRefresh + 1 })),
+
+  requestDetailRefresh: () =>
+    set((s) => ({ detailVersion: s.detailVersion + 1 })),
+
+  saveScrollPosition: (view, position) =>
+    set((s) => ({ scrollPositions: { ...s.scrollPositions, [view]: position } })),
+
+  getScrollPosition: (view) => get().scrollPositions[view] ?? 0,
 }));

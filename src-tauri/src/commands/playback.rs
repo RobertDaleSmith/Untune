@@ -280,13 +280,19 @@ pub fn update_now_playing(
     if let Some(controls) = guard.as_mut() {
         let dur = duration.map(|d| Duration::from_secs_f64(d));
 
-        // Resolve artwork hash to a file:// URL for the system Now Playing widget
+        // Resolve artwork hash to a file:// URL for the system Now Playing widget.
+        // The path must be percent-encoded (spaces → %20) because souvlaki uses
+        // NSURL URLWithString: which requires a valid URL (unlike fileURLWithPath:).
         let cover_url = artwork_hash.and_then(|hash| {
             let artwork_dir = Database::artwork_dir(&app).ok()?;
             for ext in &["jpg", "png"] {
                 let path = artwork_dir.join(format!("{}.{}", hash, ext));
                 if path.exists() {
-                    return Some(format!("file://{}", path.to_string_lossy()));
+                    let encoded = path.to_string_lossy()
+                        .replace('%', "%25")
+                        .replace(' ', "%20")
+                        .replace('#', "%23");
+                    return Some(format!("file://{}", encoded));
                 }
             }
             None

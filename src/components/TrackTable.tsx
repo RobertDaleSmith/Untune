@@ -12,7 +12,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Track } from "../lib/types";
 import { formatDuration, formatDate } from "../utils/formatters";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useLibraryStore } from "../stores/libraryStore";
 import { useNavigationStore } from "../stores/navigationStore";
+import { TrackInfoModal } from "./TrackInfoModal";
 
 const columnHelper = createColumnHelper<Track>();
 
@@ -100,13 +102,17 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const anchorIndexRef = useRef<number | null>(null);
+  const focusIndexRef = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     sortedIndex: number;
   } | null>(null);
+  const [infoTrackIndex, setInfoTrackIndex] = useState<number | null>(null);
   const { currentTrackId, play, togglePlayPause, scrollToNowPlaying } = usePlaybackStore();
+  const setSelectedTrackIds = useLibraryStore((s) => s.setSelectedTrackIds);
   const { navigateToAlbum, navigateToArtist } = useNavigationStore();
   const [flashTrackId, setFlashTrackId] = useState<number | null>(null);
   const typeAheadRef = useRef("");
@@ -118,7 +124,10 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     state: { sorting, columnSizing },
     onSortingChange: (updater) => {
       setSorting(updater);
-      setSelectedRowIndex(null);
+      setSelectedIndices(new Set());
+      anchorIndexRef.current = null;
+      focusIndexRef.current = null;
+      setSelectedTrackIds([]);
     },
     onColumnSizingChange: setColumnSizing,
     enableColumnResizing: true,
@@ -137,18 +146,72 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     [rows, play, source],
   );
 
-  const handleRowClick = useCallback((sortedIndex: number) => {
-    setSelectedRowIndex(sortedIndex);
-    setContextMenu(null);
+  // Helper to build a range of indices (inclusive)
+  const rangeSet = useCallback((a: number, b: number): Set<number> => {
+    const start = Math.min(a, b);
+    const end = Math.max(a, b);
+    const s = new Set<number>();
+    for (let i = start; i <= end; i++) s.add(i);
+    return s;
   }, []);
+
+  // Sync selection to libraryStore
+  const syncSelection = useCallback(
+    (indices: Set<number>) => {
+      setSelectedTrackIds(
+        Array.from(indices)
+          .sort((a, b) => a - b)
+          .map((i) => rows[i]?.original.id)
+          .filter((id): id is number => id != null),
+      );
+    },
+    [rows, setSelectedTrackIds],
+  );
+
+  const handleRowClick = useCallback(
+    (sortedIndex: number, e: React.MouseEvent) => {
+      setContextMenu(null);
+      let next: Set<number>;
+
+      if (e.shiftKey && anchorIndexRef.current != null) {
+        // Shift+click: range select from anchor
+        next = rangeSet(anchorIndexRef.current, sortedIndex);
+      } else if (e.metaKey || e.ctrlKey) {
+        // Cmd/Ctrl+click: toggle individual row
+        next = new Set(selectedIndices);
+        if (next.has(sortedIndex)) {
+          next.delete(sortedIndex);
+        } else {
+          next.add(sortedIndex);
+        }
+        anchorIndexRef.current = sortedIndex;
+      } else {
+        // Plain click: select single
+        next = new Set([sortedIndex]);
+        anchorIndexRef.current = sortedIndex;
+      }
+
+      focusIndexRef.current = sortedIndex;
+      setSelectedIndices(next);
+      syncSelection(next);
+    },
+    [selectedIndices, rangeSet, syncSelection],
+  );
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, sortedIndex: number) => {
       e.preventDefault();
-      setSelectedRowIndex(sortedIndex);
+      // If right-clicking an already-selected row, keep the selection
+      if (!selectedIndices.has(sortedIndex)) {
+        const next = new Set([sortedIndex]);
+        anchorIndexRef.current = sortedIndex;
+        focusIndexRef.current = sortedIndex;
+        setSelectedIndices(next);
+        syncSelection(next);
+      }
       setContextMenu({ x: e.clientX, y: e.clientY, sortedIndex });
     },
-    [],
+    [selectedIndices, syncSelection],
   );
 
   // Close context menu on any click or scroll
@@ -223,8 +286,11 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
 
   // Reset selection when tracks change
   useEffect(() => {
-    setSelectedRowIndex(null);
-  }, [tracks]);
+    setSelectedIndices(new Set());
+    anchorIndexRef.current = null;
+    focusIndexRef.current = null;
+    setSelectedTrackIds([]);
+  }, [tracks, setSelectedTrackIds]);
 
   // Determine which text field to use for type-ahead based on sort column
   const TEXT_COLUMNS = new Set(["title", "artist", "album", "genre"]);
@@ -233,6 +299,18 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
       ? sorting[0].id
       : "title"
   ) as keyof Track;
+
+  // Helper to select a single index (used by keyboard and type-ahead)
+  const selectSingle = useCallback(
+    (idx: number) => {
+      const next = new Set([idx]);
+      anchorIndexRef.current = idx;
+      focusIndexRef.current = idx;
+      setSelectedIndices(next);
+      syncSelection(next);
+    },
+    [syncSelection],
+  );
 
   // Keyboard handler
   const handleKeyDown = useCallback(
@@ -252,7 +330,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
               return val != null && String(val).toLowerCase().startsWith(query);
             });
             if (idx >= 0) {
-              setSelectedRowIndex(idx);
+              selectSingle(idx);
               virtualizer.scrollToOffset(idx * ROW_HEIGHT, { align: "start" });
             }
             typeAheadTimerRef.current = setTimeout(() => {
@@ -266,26 +344,39 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
         }
         case "ArrowDown": {
           e.preventDefault();
-          setSelectedRowIndex((prev) => {
-            const next = prev == null ? 0 : Math.min(prev + 1, rows.length - 1);
-            virtualizer.scrollToIndex(next, { align: "auto" });
-            return next;
-          });
+          const curFocus = focusIndexRef.current;
+          const nextIdx = curFocus == null ? 0 : Math.min(curFocus + 1, rows.length - 1);
+          if (e.shiftKey && anchorIndexRef.current != null) {
+            const next = rangeSet(anchorIndexRef.current, nextIdx);
+            focusIndexRef.current = nextIdx;
+            setSelectedIndices(next);
+            syncSelection(next);
+          } else {
+            selectSingle(nextIdx);
+          }
+          virtualizer.scrollToIndex(nextIdx, { align: "auto" });
           break;
         }
         case "ArrowUp": {
           e.preventDefault();
-          setSelectedRowIndex((prev) => {
-            const next = prev == null ? 0 : Math.max(prev - 1, 0);
-            virtualizer.scrollToIndex(next, { align: "auto" });
-            return next;
-          });
+          const curFocus = focusIndexRef.current;
+          const nextIdx = curFocus == null ? 0 : Math.max(curFocus - 1, 0);
+          if (e.shiftKey && anchorIndexRef.current != null) {
+            const next = rangeSet(anchorIndexRef.current, nextIdx);
+            focusIndexRef.current = nextIdx;
+            setSelectedIndices(next);
+            syncSelection(next);
+          } else {
+            selectSingle(nextIdx);
+          }
+          virtualizer.scrollToIndex(nextIdx, { align: "auto" });
           break;
         }
         case "Enter": {
-          if (selectedRowIndex != null) {
+          const fi = focusIndexRef.current;
+          if (fi != null) {
             e.preventDefault();
-            handleDoubleClick(selectedRowIndex);
+            handleDoubleClick(fi);
           }
           break;
         }
@@ -297,6 +388,22 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
         case "Meta":
           break;
         default: {
+          // Cmd+A: Select all
+          if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+            e.preventDefault();
+            const all = new Set(rows.map((_: unknown, i: number) => i));
+            anchorIndexRef.current = 0;
+            focusIndexRef.current = rows.length - 1;
+            setSelectedIndices(all);
+            syncSelection(all);
+            break;
+          }
+          // Cmd+I: Get Info for focused track
+          if (e.metaKey && e.key === "i" && focusIndexRef.current != null) {
+            e.preventDefault();
+            setInfoTrackIndex(focusIndexRef.current);
+            break;
+          }
           // Type-ahead: skip if modifier keys held (except shift for capitals)
           if (e.ctrlKey || e.metaKey || e.altKey) break;
           if (e.key.length !== 1) break;
@@ -312,7 +419,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           });
 
           if (idx >= 0) {
-            setSelectedRowIndex(idx);
+            selectSingle(idx);
             virtualizer.scrollToOffset(idx * ROW_HEIGHT, { align: "start" });
           }
 
@@ -323,7 +430,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
         }
       }
     },
-    [rows, togglePlayPause, selectedRowIndex, handleDoubleClick, virtualizer, typeAheadField],
+    [rows, togglePlayPause, handleDoubleClick, virtualizer, typeAheadField, selectSingle, rangeSet, syncSelection],
   );
 
   const virtualRows = virtualizer.getVirtualItems();
@@ -388,12 +495,12 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             const row = rows[virtualRow.index];
             const isCurrentTrack = row.original.id === currentTrackId;
             const isFlashing = row.original.id === flashTrackId;
-            const isSelected = virtualRow.index === selectedRowIndex;
+            const isSelected = selectedIndices.has(virtualRow.index);
             const noFile = !row.original.filePath;
             return (
               <tr
                 key={row.id}
-                onClick={() => handleRowClick(virtualRow.index)}
+                onClick={(e) => handleRowClick(virtualRow.index, e)}
                 onDoubleClick={() => handleDoubleClick(virtualRow.index)}
                 onContextMenu={(e) => handleContextMenu(e, virtualRow.index)}
                 className={`border-b border-n-800/30 cursor-default ${
@@ -457,6 +564,16 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             >
               Play from Here
             </button>
+            <div className="my-1 border-t border-n-700" />
+            <button
+              className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
+              onClick={() => {
+                setInfoTrackIndex(contextMenu.sortedIndex);
+                setContextMenu(null);
+              }}
+            >
+              Get Info
+            </button>
             {(track.album || track.artist) && (
               <>
                 <div className="my-1 border-t border-n-700" />
@@ -487,6 +604,24 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           </div>
         );
       })()}
+
+      {/* Get Info modal */}
+      {infoTrackIndex != null && rows[infoTrackIndex] && (
+        <TrackInfoModal
+          track={rows[infoTrackIndex].original}
+          onClose={() => setInfoTrackIndex(null)}
+          onPrev={
+            infoTrackIndex > 0
+              ? () => setInfoTrackIndex(infoTrackIndex - 1)
+              : undefined
+          }
+          onNext={
+            infoTrackIndex < rows.length - 1
+              ? () => setInfoTrackIndex(infoTrackIndex + 1)
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 }

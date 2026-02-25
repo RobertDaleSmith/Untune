@@ -169,6 +169,14 @@ impl PlaybackState {
         }
     }
 
+    pub fn is_paused(&self) -> bool {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_ref() {
+            Some(inner) => inner.sink.is_paused(),
+            None => false,
+        }
+    }
+
     pub fn current_track_id(&self) -> Option<i64> {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().and_then(|i| i.current_track_id)

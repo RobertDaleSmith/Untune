@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationStore, type View } from "../stores/navigationStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getPlaylists } from "../lib/commands";
+import { getPlaylists, deletePlaylist } from "../lib/commands";
 import { ArtworkLightbox } from "./ArtworkLightbox";
+import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import type { Playlist } from "../lib/types";
 
 const libraryItems: { label: string; view: View }[] = [
@@ -43,6 +44,24 @@ function buildPlaylistTree(playlists: Playlist[]) {
   return { rootItems, childrenMap };
 }
 
+// Smart playlist icon (gear)
+function SmartIcon({ native }: { native: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className={`shrink-0 ${native ? "opacity-80" : "opacity-40"}`}
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
 export function Sidebar() {
   const { view, playlistId, navigateTo, navigateToPlaylist } =
     useNavigationStore();
@@ -52,6 +71,17 @@ export function Sidebar() {
   const [lightboxRect, setLightboxRect] = useState<DOMRect | null>(null);
   const artworkRef = useRef<HTMLDivElement>(null);
 
+  // Smart playlist editor state
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingPlaylist, setEditingPlaylist] = useState<Playlist | undefined>();
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    playlist: Playlist;
+  } | null>(null);
+
   const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
   const artworkUrl = usePlaybackStore((s) => s.currentArtworkUrl);
   const tracks = useLibraryStore((s) => s.tracks);
@@ -60,9 +90,18 @@ export function Sidebar() {
     ? tracks.find((t) => t.id === currentTrackId)
     : null;
 
-  useEffect(() => {
+  const isImporting = useLibraryStore((s) => s.isImporting);
+  const sidebarRefresh = useNavigationStore((s) => s.sidebarRefresh);
+
+  const refreshPlaylists = useCallback(() => {
     getPlaylists().then(setPlaylists).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (!isImporting) {
+      refreshPlaylists();
+    }
+  }, [isImporting, refreshPlaylists, sidebarRefresh]);
 
   const toggleFolder = useCallback((folderId: number) => {
     setExpanded((prev) => {
@@ -85,20 +124,88 @@ export function Sidebar() {
     setLightboxOpen(true);
   }, [artworkUrl, currentTrackId]);
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, pl: Playlist) => {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, playlist: pl });
+    },
+    [],
+  );
+
+  // Listen for "open smart editor" event from App (Cmd+Alt+N menu)
+  useEffect(() => {
+    const handler = () => {
+      setEditingPlaylist(undefined);
+      setEditorOpen(true);
+    };
+    window.addEventListener("waves-open-smart-editor", handler);
+    return () => window.removeEventListener("waves-open-smart-editor", handler);
+  }, []);
+
+  // Close context menu on click anywhere
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [contextMenu]);
+
+  const handleEditSmartPlaylist = useCallback((pl: Playlist) => {
+    setEditingPlaylist(pl);
+    setEditorOpen(true);
+    setContextMenu(null);
+  }, []);
+
+  const handleDeletePlaylist = useCallback(
+    async (pl: Playlist) => {
+      setContextMenu(null);
+      try {
+        await deletePlaylist(pl.id);
+        refreshPlaylists();
+        // If we were viewing this playlist, navigate away
+        if (playlistId === pl.id) {
+          navigateTo("songs");
+        }
+      } catch (err) {
+        console.error("Failed to delete playlist:", err);
+      }
+    },
+    [refreshPlaylists, playlistId, navigateTo],
+  );
+
+  const handleEditorSave = useCallback(
+    (_id: number) => {
+      setEditorOpen(false);
+      setEditingPlaylist(undefined);
+      refreshPlaylists();
+      useNavigationStore.getState().requestDetailRefresh();
+    },
+    [refreshPlaylists],
+  );
+
+  const handleEditorClose = useCallback(() => {
+    setEditorOpen(false);
+    setEditingPlaylist(undefined);
+  }, []);
+
   const { rootItems, childrenMap } = buildPlaylistTree(playlists);
+
+  const isNativeSmart = (pl: Playlist) => pl.isSmart && !!pl.rulesJson;
 
   const renderPlaylistButton = (pl: Playlist, depth: number) => (
     <button
       key={pl.id}
       onClick={() => navigateToPlaylist(pl.id, pl.name)}
-      className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors ${
+      onContextMenu={(e) => handleContextMenu(e, pl)}
+      className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors flex items-center gap-1 ${
         view === "playlist" && playlistId === pl.id
           ? "bg-n-700/60 text-n-100"
           : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
       }`}
       style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: "8px" }}
     >
-      {pl.name}
+      {pl.isSmart && <SmartIcon native={isNativeSmart(pl)} />}
+      <span className="truncate">{pl.name}</span>
     </button>
   );
 
@@ -157,10 +264,23 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-3 pt-4 pb-1">
+      <div className="px-3 pt-4 pb-1 flex items-center justify-between">
         <h2 className="text-[11px] font-semibold text-n-500 uppercase tracking-wider">
           Playlists
         </h2>
+        <button
+          onClick={() => {
+            setEditingPlaylist(undefined);
+            setEditorOpen(true);
+          }}
+          className="text-n-500 hover:text-n-300 transition-colors"
+          title="New Smart Playlist"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
       </div>
       <nav className="px-1 flex-1 overflow-y-auto min-h-0">
         {rootItems.map((item) =>
@@ -200,6 +320,38 @@ export function Sidebar() {
           initialUrl={artworkUrl}
           originRect={lightboxRect}
           onClose={() => setLightboxOpen(false)}
+        />
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-n-800 border border-n-700 rounded-md shadow-lg py-1 min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {isNativeSmart(contextMenu.playlist) && (
+            <button
+              onClick={() => handleEditSmartPlaylist(contextMenu.playlist)}
+              className="w-full text-left px-3 py-1.5 text-xs text-n-200 hover:bg-n-700 transition-colors"
+            >
+              Edit Rules...
+            </button>
+          )}
+          <button
+            onClick={() => handleDeletePlaylist(contextMenu.playlist)}
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-n-700 transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* Smart playlist editor modal */}
+      {editorOpen && (
+        <SmartPlaylistEditor
+          onSave={handleEditorSave}
+          onClose={handleEditorClose}
+          editingPlaylist={editingPlaylist}
         />
       )}
     </aside>

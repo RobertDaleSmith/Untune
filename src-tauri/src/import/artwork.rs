@@ -40,28 +40,25 @@ pub fn extract_artwork_background(app: &AppHandle) -> Result<(), Box<dyn std::er
     let mut cache_count = 0u32;
     let mut folder_count = 0u32;
 
-    for (track_id, persistent_id, file_path, has_artwork) in &tracks {
-        let file_path = match file_path {
-            Some(p) => p,
-            None => continue,
-        };
+    for (track_id, persistent_id, file_path, _has_artwork) in &tracks {
+        // 1. Try embedded artwork (if file exists)
+        let hash = file_path
+            .as_deref()
+            .and_then(|fp| extract_and_save_artwork(fp, &artwork_dir));
 
-        // 1. Try embedded artwork (only if metadata says it has artwork)
-        let hash = if *has_artwork {
-            extract_and_save_artwork(file_path, &artwork_dir)
-        } else {
-            None
-        };
-
-        // 2. Try Apple Music artwork cache
+        // 2. Try Apple Music artwork cache (works even without file_path)
         let hash = hash.or_else(|| {
             persistent_id
                 .as_deref()
                 .and_then(|pid| try_apple_music_cache(pid, &artwork_dir, amp_db.as_ref()))
         });
 
-        // 3. Try folder artwork
-        let hash = hash.or_else(|| try_folder_artwork(file_path, &artwork_dir));
+        // 3. Try folder artwork (if file exists)
+        let hash = hash.or_else(|| {
+            file_path
+                .as_deref()
+                .and_then(|fp| try_folder_artwork(fp, &artwork_dir))
+        });
 
         if let Some(ref h) = hash {
             let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
@@ -69,8 +66,7 @@ pub fn extract_artwork_background(app: &AppHandle) -> Result<(), Box<dyn std::er
                 "UPDATE tracks SET artwork_hash = ?1 WHERE id = ?2",
                 rusqlite::params![h, track_id],
             );
-            // Count which source worked
-            if *has_artwork {
+            if file_path.is_some() {
                 embedded_count += 1;
             } else if persistent_id.is_some() {
                 cache_count += 1;
@@ -91,11 +87,17 @@ pub fn extract_artwork_background(app: &AppHandle) -> Result<(), Box<dyn std::er
 
 pub fn extract_and_save_artwork(file_path: &str, artwork_dir: &Path) -> Option<String> {
     let tagged_file = lofty::read_from_path(file_path).ok()?;
-    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag())?;
-    let picture = tag.pictures().first()?;
 
-    let data = picture.data();
-    hash_and_save(data, artwork_dir)
+    // Try all tags, not just primary — some files have pictures in secondary tags
+    for tag in tagged_file.tags() {
+        if let Some(picture) = tag.pictures().first() {
+            let data = picture.data();
+            if let Some(hash) = hash_and_save(data, artwork_dir) {
+                return Some(hash);
+            }
+        }
+    }
+    None
 }
 
 fn hash_and_save(data: &[u8], artwork_dir: &Path) -> Option<String> {

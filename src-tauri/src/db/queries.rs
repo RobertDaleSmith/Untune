@@ -3,7 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::models::{Playlist, Track};
 use crate::models::browse::{AlbumSummary, ArtistSummary, GenreSummary};
 
-const TRACK_COLUMNS: &str =
+pub const TRACK_COLUMNS: &str =
     "id, persistent_id, title, artist, album_artist, album, genre, composer,
      year, track_number, track_count, disc_number, disc_count, duration,
      size, bit_rate, sample_rate, play_count, skip_count, rating, loved,
@@ -19,7 +19,7 @@ const TRACK_COLUMNS_PREFIXED: &str =
      t.sort_title, t.sort_artist, t.sort_album, t.sort_album_artist, t.sort_composer,
      t.file_path, t.artwork_hash, t.has_artwork";
 
-fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
+pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
     Ok(Track {
         id: row.get(0)?,
         persistent_id: row.get(1)?,
@@ -148,7 +148,7 @@ pub fn get_track_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
 
 pub fn get_playlists(conn: &Connection) -> Result<Vec<Playlist>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count
+        "SELECT id, persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json
          FROM playlists ORDER BY sort_order, name",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -161,6 +161,7 @@ pub fn get_playlists(conn: &Connection) -> Result<Vec<Playlist>, rusqlite::Error
             parent_id: row.get(5)?,
             sort_order: row.get(6)?,
             track_count: row.get(7)?,
+            rules_json: row.get(8)?,
         })
     })?;
     rows.collect()
@@ -170,6 +171,18 @@ pub fn get_playlist_tracks(
     conn: &Connection,
     playlist_id: i64,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    // Check if this is a native smart playlist (has rules_json)
+    let rules: Option<String> = conn.query_row(
+        "SELECT rules_json FROM playlists WHERE id = ? AND is_smart = 1",
+        params![playlist_id],
+        |row| row.get(0),
+    ).unwrap_or(None);
+
+    if let Some(ref rules_json) = rules {
+        return crate::smart_playlists::evaluate(conn, rules_json)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()));
+    }
+
     let sql = format!(
         "SELECT {} FROM playlist_tracks pt
          JOIN tracks t ON t.id = pt.track_id
@@ -258,7 +271,8 @@ pub fn get_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Erro
                  COALESCE(album_artist, artist, '(Unknown Artist)') as artist_name,
                  COUNT(*) as track_count,
                  COALESCE(SUM(duration), 0) as total_duration,
-                 MAX(year) as year
+                 MAX(year) as year,
+                 MAX(artwork_hash) as artwork_hash
                FROM tracks
                GROUP BY COALESCE(album, '(Unknown Album)'), COALESCE(album_artist, artist, '(Unknown Artist)')
                ORDER BY COALESCE(album, '(Unknown Album)') COLLATE NOCASE";
@@ -271,6 +285,7 @@ pub fn get_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Erro
             track_count: row.get(2)?,
             total_duration: row.get(3)?,
             year: row.get(4)?,
+            artwork_hash: row.get(5)?,
         })
     })?;
     rows.collect()

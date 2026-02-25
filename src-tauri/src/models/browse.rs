@@ -8,6 +8,7 @@ pub struct AlbumSummary {
     pub track_count: i64,
     pub total_duration: f64,
     pub year: Option<i32>,
+    pub artwork_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

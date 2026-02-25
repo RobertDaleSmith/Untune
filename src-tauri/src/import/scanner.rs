@@ -68,7 +68,7 @@ fn parse_audio_file(path: &Path) -> Option<ScannedFile> {
         (None, None, None, None)
     };
 
-    let has_artwork = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
+    let has_artwork = tagged_file.tags().iter().any(|t| !t.pictures().is_empty());
 
     let duration_secs = properties.duration().as_secs_f64();
     let bit_rate = properties.audio_bitrate().map(|b| b as i32);
