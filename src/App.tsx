@@ -5,14 +5,13 @@ import { useNavigationStore } from "./stores/navigationStore";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useColumnBrowserStore, type BrowserColumn } from "./stores/columnBrowserStore";
-import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl, createPlaylist, createPlaylistFolder } from "./lib/commands";
+import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl, getUpcomingTracks, createPlaylist, createPlaylistFolder } from "./lib/commands";
 import { ImportProgress } from "./components/ImportProgress";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
 import { ContentRouter } from "./components/ContentRouter";
 import { StatusBar } from "./components/StatusBar";
 import { useDragRegion } from "./hooks/useDragRegion";
-import { WelcomeAnimation } from "./components/WelcomeAnimation";
 import { MiniPlayer } from "./components/MiniPlayer";
 
 function App() {
@@ -318,6 +317,25 @@ function App() {
     return () => { cancelled = true; };
   }, [currentTrackId, tracks]);
 
+  // Pre-warm artwork for upcoming tracks (next/prev in queue)
+  useEffect(() => {
+    if (currentTrackId == null || tracks.length === 0) return;
+    let cancelled = false;
+    getUpcomingTracks(5).then(({ prevTrackIds, nextTrackIds }) => {
+      if (cancelled) return;
+      const allIds = [...nextTrackIds, ...prevTrackIds];
+      const trackMap = new Map(tracks.map((t) => [t.id, t]));
+      for (const id of allIds) {
+        const t = trackMap.get(id);
+        if (t?.artworkHash) {
+          // Fire-and-forget: this populates the shared artwork cache
+          getArtworkDataUrl(t.artworkHash).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentTrackId, tracks]);
+
   // Blurred background crossfade state
   const [bgReady, setBgReady] = useState(false);
   const [bgSrc, setBgSrc] = useState<string | null>(null);
@@ -352,16 +370,19 @@ function App() {
   const isDarkSystem = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const splashBg = isDarkSystem ? "#010101" : "#fefefe";
 
-  // Loading splash — show logo while checking for existing library
-  if (isLoading) {
-    return (
-      <div className="h-screen flex flex-col" style={{ background: splashBg }}>
-        <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
-        <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
-          <WelcomeAnimation />
-        </div>
-      </div>
-    );
+  // Loading splash — the HTML #initial-loader stays visible until we dismiss it
+  const showSplash = isLoading || (tracksLoading && tracks.length === 0);
+
+  useEffect(() => {
+    const loader = document.getElementById("initial-loader");
+    if (!loader) return;
+    if (!showSplash) {
+      loader.remove();
+    }
+  }, [showSplash]);
+
+  if (showSplash) {
+    return null;
   }
 
   if (!isImported && !isImporting) {

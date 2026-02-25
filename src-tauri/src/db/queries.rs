@@ -329,6 +329,70 @@ pub fn get_genres(conn: &Connection) -> Result<Vec<GenreSummary>, rusqlite::Erro
     rows.collect()
 }
 
+// --- Lyrics cache ---
+
+pub fn get_cached_lyrics(
+    conn: &Connection,
+    track_name: &str,
+    artist_name: &str,
+    album_name: &str,
+) -> Result<Option<(Option<String>, Option<String>, bool)>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT synced_lyrics, plain_lyrics, instrumental FROM lyrics_cache
+         WHERE track_name = ? AND artist_name = ? AND album_name = ?",
+        params![track_name, artist_name, album_name],
+        |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, i32>(2)? != 0,
+            ))
+        },
+    )
+    .optional()
+}
+
+pub fn save_cached_lyrics(
+    conn: &Connection,
+    track_name: &str,
+    artist_name: &str,
+    album_name: &str,
+    synced_lyrics: Option<&str>,
+    plain_lyrics: Option<&str>,
+    instrumental: bool,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO lyrics_cache (track_name, artist_name, album_name, synced_lyrics, plain_lyrics, instrumental, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
+         ON CONFLICT(track_name, artist_name, album_name)
+         DO UPDATE SET synced_lyrics = ?4, plain_lyrics = ?5, instrumental = ?6, fetched_at = datetime('now')",
+        params![track_name, artist_name, album_name, synced_lyrics, plain_lyrics, instrumental as i32],
+    )?;
+    Ok(())
+}
+
+pub fn update_artwork_for_album(
+    conn: &Connection,
+    artwork_hash: &str,
+    album: &str,
+    artist: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks SET artwork_hash = ?1
+         WHERE COALESCE(album, '(Unknown Album)') = ?2
+           AND COALESCE(album_artist, artist, '(Unknown Artist)') = ?3",
+        params![artwork_hash, album, artist],
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT id FROM tracks
+         WHERE COALESCE(album, '(Unknown Album)') = ?1
+           AND COALESCE(album_artist, artist, '(Unknown Artist)') = ?2",
+    )?;
+    let rows = stmt.query_map(params![album, artist], |row| row.get::<_, i64>(0))?;
+    rows.collect()
+}
+
 pub fn get_album_tracks(
     conn: &Connection,
     album: &str,
@@ -361,6 +425,23 @@ pub fn get_artist_tracks(
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![artist], |row| map_track_row(row))?;
     rows.collect()
+}
+
+pub fn reorder_playlists(
+    conn: &Connection,
+    updates: &[(i64, i32, Option<i64>)],
+) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare(
+            "UPDATE playlists SET sort_order = ?1, parent_id = ?2 WHERE id = ?3",
+        )?;
+        for &(id, sort_order, parent_id) in updates {
+            stmt.execute(params![sort_order, parent_id, id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn get_genre_tracks(

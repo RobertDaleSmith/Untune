@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationStore, type View } from "../stores/navigationStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getPlaylists, deletePlaylist } from "../lib/commands";
+import { getPlaylists, deletePlaylist, reorderPlaylists } from "../lib/commands";
 import { ArtworkLightbox } from "./ArtworkLightbox";
 import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import type { Playlist } from "../lib/types";
@@ -82,6 +82,13 @@ export function Sidebar() {
     playlist: Playlist;
   } | null>(null);
 
+  // Drag-and-drop state
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: number;
+    position: "before" | "after" | "inside";
+  } | null>(null);
+
   const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
   const artworkUrl = usePlaybackStore((s) => s.currentArtworkUrl);
   const tracks = useLibraryStore((s) => s.tracks);
@@ -117,12 +124,12 @@ export function Sidebar() {
   }, []);
 
   const openLightbox = useCallback(() => {
-    if (!artworkUrl || !currentTrackId) return;
+    if (!currentTrackId) return;
     const rect = artworkRef.current?.getBoundingClientRect();
     if (!rect) return;
     setLightboxRect(rect);
     setLightboxOpen(true);
-  }, [artworkUrl, currentTrackId]);
+  }, [currentTrackId]);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, pl: Playlist) => {
@@ -188,6 +195,176 @@ export function Sidebar() {
     setEditingPlaylist(undefined);
   }, []);
 
+  // --- Drag-and-drop handlers ---
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, pl: Playlist) => {
+      setDragId(pl.id);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(pl.id));
+    },
+    [],
+  );
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, targetPl: Playlist) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dragId === null || dragId === targetPl.id) return;
+
+      const rect = e.currentTarget.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const third = rect.height / 3;
+
+      // Folders can accept "inside" drops (middle third), but not folder-into-folder
+      const draggedPl = playlists.find((p) => p.id === dragId);
+      const isTargetFolder = targetPl.isFolder;
+      const isDraggedFolder = draggedPl?.isFolder ?? false;
+
+      let position: "before" | "after" | "inside";
+      if (y < third) {
+        position = "before";
+      } else if (y > third * 2) {
+        position = "after";
+      } else if (isTargetFolder && !isDraggedFolder) {
+        position = "inside";
+      } else if (y < rect.height / 2) {
+        position = "before";
+      } else {
+        position = "after";
+      }
+
+      setDropTarget({ id: targetPl.id, position });
+    },
+    [dragId, playlists],
+  );
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if we're actually leaving the element (not entering a child)
+    const related = e.relatedTarget as Node | null;
+    if (!e.currentTarget.contains(related)) {
+      setDropTarget(null);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      if (dragId === null || dropTarget === null) {
+        setDragId(null);
+        setDropTarget(null);
+        return;
+      }
+
+      const targetPl = playlists.find((p) => p.id === dropTarget.id);
+      const draggedPl = playlists.find((p) => p.id === dragId);
+      if (!targetPl || !draggedPl) {
+        setDragId(null);
+        setDropTarget(null);
+        return;
+      }
+
+      // Determine new parent for dragged item
+      let newParentId: number | null;
+      if (dropTarget.position === "inside") {
+        newParentId = targetPl.id;
+      } else {
+        newParentId = targetPl.parentId;
+      }
+
+      // Prevent folder-into-folder
+      if (draggedPl.isFolder && newParentId !== null) {
+        setDragId(null);
+        setDropTarget(null);
+        return;
+      }
+
+      const oldParentId = draggedPl.parentId;
+
+      // Build the sibling list at the target level (excluding the dragged item)
+      const targetSiblings = playlists
+        .filter((p) => p.parentId === newParentId && p.id !== dragId)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
+      // Find insertion index
+      let insertIdx: number;
+      const targetIdx = targetSiblings.findIndex((p) => p.id === dropTarget.id);
+      if (dropTarget.position === "inside") {
+        // Append to end of folder's children
+        insertIdx = targetSiblings.length;
+      } else if (targetIdx === -1) {
+        // Target is the dragged item itself or not found at this level
+        insertIdx = targetSiblings.length;
+      } else if (dropTarget.position === "before") {
+        insertIdx = targetIdx;
+      } else {
+        insertIdx = targetIdx + 1;
+      }
+
+      // Insert dragged item
+      const newOrder = [...targetSiblings];
+      newOrder.splice(insertIdx, 0, draggedPl);
+
+      // Build updates for target level
+      const updates: { id: number; sortOrder: number; parentId: number | null }[] =
+        newOrder.map((p, i) => ({
+          id: p.id,
+          sortOrder: i,
+          parentId: newParentId,
+        }));
+
+      // If parent changed, also re-number old siblings to close gaps
+      if (oldParentId !== newParentId) {
+        const oldSiblings = playlists
+          .filter((p) => p.parentId === oldParentId && p.id !== dragId)
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+        oldSiblings.forEach((p, i) => {
+          updates.push({ id: p.id, sortOrder: i, parentId: oldParentId });
+        });
+      }
+
+      try {
+        await reorderPlaylists(updates);
+        refreshPlaylists();
+        // Auto-expand target folder so the moved item is visible
+        if (newParentId !== null) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(newParentId);
+            saveExpandedState(next);
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error("Failed to reorder playlists:", err);
+      }
+
+      setDragId(null);
+      setDropTarget(null);
+    },
+    [dragId, dropTarget, playlists, refreshPlaylists],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setDragId(null);
+    setDropTarget(null);
+  }, []);
+
+  // Helper to get drop indicator styles for a playlist item
+  const getDropIndicatorClass = (plId: number) => {
+    if (!dropTarget || dropTarget.id !== plId) return "";
+    switch (dropTarget.position) {
+      case "before":
+        return "border-t-2 border-blue-500";
+      case "after":
+        return "border-b-2 border-blue-500";
+      case "inside":
+        return "bg-blue-500/15 border border-blue-500/50 rounded-md";
+      default:
+        return "";
+    }
+  };
+
   const { rootItems, childrenMap } = buildPlaylistTree(playlists);
 
   const isNativeSmart = (pl: Playlist) => pl.isSmart && !!pl.rulesJson;
@@ -195,13 +372,19 @@ export function Sidebar() {
   const renderPlaylistButton = (pl: Playlist, depth: number) => (
     <button
       key={pl.id}
+      draggable
+      onDragStart={(e) => handleDragStart(e, pl)}
+      onDragOver={(e) => handleDragOver(e, pl)}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onDragEnd={handleDragEnd}
       onClick={() => navigateToPlaylist(pl.id, pl.name)}
       onContextMenu={(e) => handleContextMenu(e, pl)}
       className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors flex items-center gap-1 ${
         view === "playlist" && playlistId === pl.id
           ? "bg-n-700/60 text-n-100"
           : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
-      }`}
+      } ${dragId === pl.id ? "opacity-50" : ""} ${getDropIndicatorClass(pl.id)}`}
       style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: "8px" }}
     >
       {pl.isSmart && <SmartIcon native={isNativeSmart(pl)} />}
@@ -216,8 +399,16 @@ export function Sidebar() {
     return (
       <div key={folder.id}>
         <button
+          draggable
+          onDragStart={(e) => handleDragStart(e, folder)}
+          onDragOver={(e) => handleDragOver(e, folder)}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
           onClick={() => toggleFolder(folder.id)}
-          className="w-full text-left py-1 text-sm rounded-md truncate transition-colors text-n-400 hover:text-n-200 hover:bg-n-800/50 flex items-center gap-1"
+          className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors text-n-400 hover:text-n-200 hover:bg-n-800/50 flex items-center gap-1 ${
+            dragId === folder.id ? "opacity-50" : ""
+          } ${getDropIndicatorClass(folder.id)}`}
           style={{ paddingLeft: `${4 + depth * 12}px`, paddingRight: "8px" }}
         >
           <svg
@@ -295,7 +486,7 @@ export function Sidebar() {
         <div
           ref={artworkRef}
           onClick={openLightbox}
-          className={`aspect-square w-full overflow-hidden bg-n-800${artworkUrl ? " cursor-pointer" : ""}`}
+          className={`aspect-square w-full overflow-hidden bg-n-800${currentTrackId ? " cursor-pointer" : ""}`}
         >
           {artworkUrl ? (
             <img
@@ -314,11 +505,13 @@ export function Sidebar() {
         </div>
       </div>
 
-      {lightboxOpen && currentTrackId && artworkUrl && lightboxRect && (
+      {lightboxOpen && currentTrackId && lightboxRect && (
         <ArtworkLightbox
           trackId={currentTrackId}
-          initialUrl={artworkUrl}
+          artworkUrl={artworkUrl}
           originRect={lightboxRect}
+          trackInfo={currentTrack ? { title: currentTrack.title, artist: currentTrack.artist, album: currentTrack.album } : undefined}
+          duration={currentTrack?.duration ?? null}
           onClose={() => setLightboxOpen(false)}
         />
       )}

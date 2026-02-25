@@ -9,32 +9,53 @@
     <title>Waves</title>
   </head>
   <body>
-    <div id="root">
-      <style>
-        @keyframes spin{to{transform:rotate(360deg)}}
-        html,body{margin:0;padding:0;background:#fefefe}
-        #initial-loader{height:100vh;display:flex;flex-direction:column;align-items:center;background:#fefefe;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
-        #initial-loader::before{content:'';flex-shrink:0;height:40px}
-        #initial-loader .content{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
-        #initial-loader .icon-dark{display:none}
-        #initial-loader .icon-light{display:block}
-        #initial-loader .spinner{width:28px;height:28px;border:2.5px solid #d4d4d4;border-top-color:#525252;border-radius:50%;animation:spin .8s linear infinite}
-        @media(prefers-color-scheme:dark){
-          html,body{background:#010101}
-          #initial-loader{background:#010101}
-          #initial-loader .icon-dark{display:block}
-          #initial-loader .icon-light{display:none}
-          #initial-loader .spinner{border-color:#404040;border-top-color:#a3a3a3}
-        }
-      </style>
-      <div id="initial-loader">
-        <div class="content">
-          <img class="icon-light" src="/icon-light.png" alt="" width="200" height="200" />
-          <img class="icon-dark" src="/icon-dark.png" alt="" width="200" height="200" />
-          <div class="spinner" style="margin-top:32px"></div>
-        </div>
+    <style>
+      @keyframes spin{to{transform:rotate(360deg)}}
+      @keyframes star-drift{from{transform:translateY(0)}to{transform:translateY(calc(-100vh - 10px))}}
+      @keyframes star-twinkle{0%,100%{opacity:.3}50%{opacity:1}}
+      *,*::before,*::after{box-sizing:border-box}
+      html,body{margin:0;padding:0;background:#fefefe}
+      #initial-loader{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;background:#fefefe;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;overflow:hidden}
+      #initial-loader::before{content:'';flex-shrink:0;height:40px}
+      #initial-loader .content{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1}
+      #initial-loader .icon-dark{display:none}
+      #initial-loader .icon-light{display:block}
+      #initial-loader .spinner{width:33px;height:33px;border:2.5px solid #d4d4d4;border-top-color:#525252;border-radius:50%;animation:spin .8s linear infinite}
+      .star{position:fixed;bottom:-5px;border-radius:50%;pointer-events:none;will-change:transform,opacity}
+      @media(prefers-color-scheme:dark){
+        html,body{background:#010101}
+        #initial-loader{background:#010101}
+        #initial-loader .icon-dark{display:block}
+        #initial-loader .icon-light{display:none}
+        #initial-loader .spinner{border-color:#404040;border-top-color:#a3a3a3}
+      }
+    </style>
+    <div id="initial-loader">
+      <div id="starfield" style="position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden"></div>
+      <div class="content">
+        <img class="icon-light" src="/icon-light.png" alt="" width="200" height="200" />
+        <img class="icon-dark" src="/icon-dark.png" alt="" width="200" height="200" />
+        <div class="spinner" style="margin-top:32px"></div>
       </div>
     </div>
+    <script>
+      (function(){
+        var sf=document.getElementById('starfield');if(!sf)return;
+        var dark=window.matchMedia('(prefers-color-scheme:dark)').matches;
+        var bg=dark?'255,255,255':'0,0,0';
+        for(var i=0;i<70;i++){
+          var el=document.createElement('div');
+          el.className='star';
+          var size=Math.random()*2+0.6;
+          var drift=Math.random()*80+40;
+          var twinkle=Math.random()*8+4;
+          var alpha=Math.random()*0.45+0.1;
+          el.style.cssText='left:'+Math.random()*100+'%;width:'+size+'px;height:'+size+'px;background:rgba('+bg+','+alpha+');animation:star-drift '+drift+'s linear '+(-Math.random()*drift)+'s infinite,star-twinkle '+twinkle+'s ease-in-out '+(-Math.random()*twinkle)+'s infinite';
+          sf.appendChild(el);
+        }
+      })();
+    </script>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

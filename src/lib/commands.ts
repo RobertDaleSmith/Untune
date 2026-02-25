@@ -162,6 +162,15 @@ export async function clearNowPlaying(): Promise<void> {
   return invoke("clear_now_playing");
 }
 
+export interface UpcomingTracks {
+  prevTrackIds: number[];
+  nextTrackIds: number[];
+}
+
+export async function getUpcomingTracks(count: number): Promise<UpcomingTracks> {
+  return invoke<UpcomingTracks>("get_upcoming_tracks", { count });
+}
+
 export async function getPreference(key: string): Promise<string | null> {
   return invoke<string | null>("get_preference", { key });
 }
@@ -203,4 +212,57 @@ export async function createPlaylistFolder(
   parentId?: number | null,
 ): Promise<number> {
   return invoke<number>("create_playlist_folder", { name, parentId });
+}
+
+export async function reorderPlaylists(
+  updates: { id: number; sortOrder: number; parentId: number | null }[],
+): Promise<void> {
+  return invoke("reorder_playlists", { updates });
+}
+
+// --- Artwork search ---
+
+export interface ArtworkSearchResult {
+  thumbnailUrl: string;
+  fullUrl: string;
+  albumName: string;
+  artistName: string;
+  source: string;
+}
+
+export interface ApplyArtworkResult {
+  artworkHash: string;
+  updatedTrackIds: number[];
+}
+
+export async function searchArtwork(
+  artist: string,
+  album: string,
+): Promise<ArtworkSearchResult[]> {
+  return invoke<ArtworkSearchResult[]>("search_artwork", { artist, album });
+}
+
+export async function applyArtworkFromUrl(
+  imageUrl: string,
+  album: string,
+  artist: string,
+): Promise<ApplyArtworkResult> {
+  return invoke<ApplyArtworkResult>("apply_artwork_from_url", { imageUrl, album, artist });
+}
+
+// --- Lyrics ---
+
+export interface LyricsResult {
+  syncedLyrics: string | null;
+  plainLyrics: string | null;
+  instrumental: boolean;
+}
+
+export async function fetchLyrics(
+  trackName: string,
+  artistName: string,
+  albumName: string,
+  duration: number | null,
+): Promise<LyricsResult> {
+  return invoke<LyricsResult>("fetch_lyrics", { trackName, artistName, albumName, duration });
 }

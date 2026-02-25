@@ -100,7 +100,7 @@ pub fn extract_and_save_artwork(file_path: &str, artwork_dir: &Path) -> Option<S
     None
 }
 
-fn hash_and_save(data: &[u8], artwork_dir: &Path) -> Option<String> {
+pub fn hash_and_save(data: &[u8], artwork_dir: &Path) -> Option<String> {
     if data.is_empty() {
         return None;
     }

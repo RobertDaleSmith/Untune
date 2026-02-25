@@ -25,6 +25,8 @@ pub struct PlaybackInner {
     shuffle: bool,
     repeat_mode: RepeatMode,
     shuffle_history: Vec<usize>,
+    shuffle_forward: Vec<usize>,
+    shuffle_next: Option<usize>,
 }
 
 // SAFETY: PlaybackInner is only accessed behind a Mutex, so all access is serialized.
@@ -63,6 +65,8 @@ impl PlaybackState {
             shuffle: false,
             repeat_mode: RepeatMode::Off,
             shuffle_history: Vec::new(),
+            shuffle_forward: Vec::new(),
+            shuffle_next: None,
         })
     }
 
@@ -207,6 +211,9 @@ impl PlaybackState {
         if let Some(inner) = guard.as_mut() {
             inner.queue = ids;
             inner.queue_index = start_index;
+            if inner.shuffle && !inner.queue.is_empty() {
+                inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), start_index));
+            }
         }
         Ok(())
     }
@@ -220,13 +227,30 @@ impl PlaybackState {
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
         if let Some(inner) = guard.as_mut() {
             inner.shuffle = enabled;
+            if enabled && !inner.queue.is_empty() {
+                inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), inner.queue_index));
+            } else {
+                inner.shuffle_next = None;
+            }
         }
         Ok(())
     }
 
-    pub fn next_index(&self) -> Option<(i64, usize)> {
-        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        guard.as_ref().and_then(|inner| {
+    fn pick_random(queue_len: usize, current_index: usize) -> usize {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        Instant::now().hash(&mut hasher);
+        current_index.hash(&mut hasher);
+        hasher.finish() as usize % queue_len
+    }
+
+    /// Compute the next track to play, handling shuffle forward stack, history, and pre-pick.
+    /// All state mutations happen under a single lock to avoid races.
+    /// Returns (track_id, queue_index).
+    pub fn advance_next(&self) -> Option<(i64, usize)> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_mut().and_then(|inner| {
             if inner.queue.is_empty() {
                 return None;
             }
@@ -234,18 +258,34 @@ impl PlaybackState {
                 return Some((inner.queue[inner.queue_index], inner.queue_index));
             }
             if inner.shuffle {
-                use std::collections::hash_map::DefaultHasher;
-                use std::hash::{Hash, Hasher};
-                let mut hasher = DefaultHasher::new();
-                Instant::now().hash(&mut hasher);
-                inner.queue_index.hash(&mut hasher);
-                let rand_idx = hasher.finish() as usize % inner.queue.len();
+                // 1. Try forward stack first (replaying tracks we backed away from)
+                if let Some(fwd_idx) = inner.shuffle_forward.pop() {
+                    if fwd_idx < inner.queue.len() {
+                        inner.shuffle_history.push(inner.queue_index);
+                        inner.queue_index = fwd_idx;
+                        // Ensure we have a pre-pick ready
+                        if inner.shuffle_next.is_none() {
+                            inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), fwd_idx));
+                        }
+                        return Some((inner.queue[fwd_idx], fwd_idx));
+                    }
+                }
+                // 2. Use pre-picked next or pick fresh
+                let rand_idx = inner.shuffle_next.take()
+                    .unwrap_or_else(|| Self::pick_random(inner.queue.len(), inner.queue_index));
+                inner.shuffle_history.push(inner.queue_index);
+                inner.shuffle_forward.clear();
+                inner.queue_index = rand_idx;
+                // Pre-pick the one after that
+                inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), rand_idx));
                 Some((inner.queue[rand_idx], rand_idx))
             } else {
                 let next = inner.queue_index + 1;
                 if next < inner.queue.len() {
+                    inner.queue_index = next;
                     Some((inner.queue[next], next))
                 } else if inner.repeat_mode == RepeatMode::All {
+                    inner.queue_index = 0;
                     Some((inner.queue[0], 0))
                 } else {
                     None
@@ -254,16 +294,85 @@ impl PlaybackState {
         })
     }
 
-    pub fn prev_index(&self) -> Option<(i64, usize)> {
-        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        guard.as_ref().and_then(|inner| {
-            if inner.queue_index > 0 {
-                let prev = inner.queue_index - 1;
-                Some((inner.queue[prev], prev))
+    /// Compute the previous track to play, handling shuffle history and forward stack.
+    /// All state mutations happen under a single lock.
+    pub fn advance_prev(&self) -> Option<(i64, usize)> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_mut().and_then(|inner| {
+            if inner.shuffle {
+                let prev_idx = inner.shuffle_history.pop()?;
+                inner.shuffle_forward.push(inner.queue_index);
+                inner.queue_index = prev_idx;
+                if prev_idx < inner.queue.len() {
+                    Some((inner.queue[prev_idx], prev_idx))
+                } else {
+                    None
+                }
             } else {
-                None
+                if inner.queue_index > 0 {
+                    let prev = inner.queue_index - 1;
+                    inner.queue_index = prev;
+                    Some((inner.queue[prev], prev))
+                } else {
+                    None
+                }
             }
         })
+    }
+
+    /// Peek at upcoming track IDs without consuming them.
+    /// Returns (prev_ids, next_ids) — previous from history/sequential, next from forward stack/pre-pick/sequential.
+    pub fn peek_upcoming(&self, count: usize) -> (Vec<i64>, Vec<i64>) {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(inner) = guard.as_ref() else {
+            return (vec![], vec![]);
+        };
+        if inner.queue.is_empty() {
+            return (vec![], vec![]);
+        }
+
+        // Previous tracks
+        let mut prev_ids = Vec::new();
+        if inner.shuffle {
+            // From shuffle history (most recent first)
+            for &idx in inner.shuffle_history.iter().rev().take(count) {
+                if idx < inner.queue.len() {
+                    prev_ids.push(inner.queue[idx]);
+                }
+            }
+        } else {
+            let start = inner.queue_index.saturating_sub(count);
+            for i in (start..inner.queue_index).rev() {
+                prev_ids.push(inner.queue[i]);
+            }
+        }
+
+        // Next tracks
+        let mut next_ids = Vec::new();
+        if inner.shuffle {
+            // From forward stack first (most recent = next to play)
+            for &idx in inner.shuffle_forward.iter().rev().take(count) {
+                if idx < inner.queue.len() {
+                    next_ids.push(inner.queue[idx]);
+                }
+            }
+            // Then the pre-picked next
+            if next_ids.len() < count {
+                if let Some(idx) = inner.shuffle_next {
+                    if idx < inner.queue.len() {
+                        next_ids.push(inner.queue[idx]);
+                    }
+                }
+            }
+        } else {
+            let start = inner.queue_index + 1;
+            let end = (start + count).min(inner.queue.len());
+            for i in start..end {
+                next_ids.push(inner.queue[i]);
+            }
+        }
+
+        (prev_ids, next_ids)
     }
 
     pub fn repeat_mode(&self) -> RepeatMode {
@@ -279,33 +388,4 @@ impl PlaybackState {
         Ok(())
     }
 
-    pub fn update_queue_index(&self, index: usize) -> Result<(), String> {
-        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
-        if let Some(inner) = guard.as_mut() {
-            inner.queue_index = index;
-        }
-        Ok(())
-    }
-
-    /// Push current queue_index onto shuffle history before moving to a new track.
-    pub fn push_shuffle_history(&self) -> Result<(), String> {
-        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
-        if let Some(inner) = guard.as_mut() {
-            inner.shuffle_history.push(inner.queue_index);
-        }
-        Ok(())
-    }
-
-    /// Pop the last index from shuffle history. Returns the track_id and index.
-    pub fn pop_shuffle_history(&self) -> Option<(i64, usize)> {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        guard.as_mut().and_then(|inner| {
-            let prev_idx = inner.shuffle_history.pop()?;
-            if prev_idx < inner.queue.len() {
-                Some((inner.queue[prev_idx], prev_idx))
-            } else {
-                None
-            }
-        })
-    }
 }

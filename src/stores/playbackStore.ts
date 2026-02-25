@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useLibraryStore } from "./libraryStore";
 import {
   getPlaybackInfo,
   pausePlayback,
@@ -33,6 +34,7 @@ interface PlaybackState {
   _pollTimer: ReturnType<typeof setInterval> | null;
   _positionSaveTimer: ReturnType<typeof setInterval> | null;
   _errorTimer: ReturnType<typeof setTimeout> | null;
+  _restoredFromSession: boolean;
 
   showError: (msg: string) => void;
   requestScrollToNowPlaying: () => void;
@@ -67,6 +69,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   _pollTimer: null,
   _positionSaveTimer: null,
   _errorTimer: null,
+  _restoredFromSession: false,
 
   showError: (msg: string) => {
     const prev = get()._errorTimer;
@@ -87,7 +90,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         // Use current settings
       }
     }
-    set({ queueSource: newSource });
+    set({ queueSource: newSource, _restoredFromSession: false });
     try {
       await playQueue(trackIds, startIndex);
       set({
@@ -116,21 +119,30 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   resume: async () => {
-    try {
-      await resumePlayback();
-      set({ isPlaying: true });
-      get().startPolling();
-    } catch {
-      // Cold start: no audio backend loaded yet, re-queue the single track
+    if (get()._restoredFromSession) {
+      // Cold start: track was restored from session, no audio loaded yet
       const trackId = get().currentTrackId;
       const pos = get().position;
       if (trackId != null) {
-        await playQueue([trackId], 0);
+        set({ _restoredFromSession: false });
+        // Build full queue from library so next/prev work after resume
+        const allTracks = useLibraryStore.getState().tracks;
+        const trackIds = allTracks.map((t) => t.id);
+        const idx = trackIds.indexOf(trackId);
+        if (idx >= 0 && trackIds.length > 1) {
+          await playQueue(trackIds, idx);
+        } else {
+          await playQueue([trackId], 0);
+        }
         if (pos > 0) await seekPlayback(pos);
         set({ isPlaying: true });
         get().startPolling();
       }
+      return;
     }
+    await resumePlayback();
+    set({ isPlaying: true });
+    get().startPolling();
   },
 
   togglePlayPause: async () => {
@@ -281,6 +293,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         currentTrackId: trackId,
         position: isNaN(position) ? 0 : position,
         isPlaying: false,
+        _restoredFromSession: true,
       });
     } catch {
       // Ignore corrupt preferences

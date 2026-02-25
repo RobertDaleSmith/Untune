@@ -94,6 +94,18 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS lyrics_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            track_name TEXT NOT NULL,
+            artist_name TEXT NOT NULL,
+            album_name TEXT NOT NULL DEFAULT '',
+            synced_lyrics TEXT,
+            plain_lyrics TEXT,
+            instrumental INTEGER DEFAULT 0,
+            fetched_at TEXT NOT NULL,
+            UNIQUE(track_name, artist_name, album_name)
+        );
         ",
     )?;
     migrate_playlists(conn);

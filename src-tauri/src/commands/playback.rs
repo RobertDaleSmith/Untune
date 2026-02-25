@@ -91,14 +91,9 @@ pub fn next_track(
     db: State<'_, Database>,
     playback: State<'_, PlaybackState>,
 ) -> Result<Option<i64>, String> {
-    let is_shuffle = playback.shuffle();
     loop {
-        match playback.next_index() {
-            Some((track_id, idx)) => {
-                if is_shuffle {
-                    playback.push_shuffle_history()?;
-                }
-                playback.update_queue_index(idx)?;
+        match playback.advance_next() {
+            Some((track_id, _idx)) => {
                 match lookup_and_play(track_id, &db, &playback) {
                     Ok(()) => return Ok(Some(track_id)),
                     Err(_) => continue,
@@ -114,34 +109,35 @@ pub fn previous_track(
     db: State<'_, Database>,
     playback: State<'_, PlaybackState>,
 ) -> Result<Option<i64>, String> {
-    let is_shuffle = playback.shuffle();
-    if is_shuffle {
-        // In shuffle mode, go back through play history
-        loop {
-            match playback.pop_shuffle_history() {
-                Some((track_id, idx)) => {
-                    playback.update_queue_index(idx)?;
-                    match lookup_and_play(track_id, &db, &playback) {
-                        Ok(()) => return Ok(Some(track_id)),
-                        Err(_) => continue,
-                    }
+    loop {
+        match playback.advance_prev() {
+            Some((track_id, _idx)) => {
+                match lookup_and_play(track_id, &db, &playback) {
+                    Ok(()) => return Ok(Some(track_id)),
+                    Err(_) => continue,
                 }
-                None => return Ok(None),
             }
+            None => return Ok(None),
         }
-    } else {
-        loop {
-            match playback.prev_index() {
-                Some((track_id, idx)) => {
-                    playback.update_queue_index(idx)?;
-                    match lookup_and_play(track_id, &db, &playback) {
-                        Ok(()) => return Ok(Some(track_id)),
-                        Err(_) => continue,
-                    }
-                }
-                None => return Ok(None),
-            }
-        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpcomingTracks {
+    pub prev_track_ids: Vec<i64>,
+    pub next_track_ids: Vec<i64>,
+}
+
+#[tauri::command]
+pub fn get_upcoming_tracks(
+    count: usize,
+    playback: State<'_, PlaybackState>,
+) -> UpcomingTracks {
+    let (prev, next) = playback.peek_upcoming(count.min(20));
+    UpcomingTracks {
+        prev_track_ids: prev,
+        next_track_ids: next,
     }
 }
 

@@ -218,10 +218,10 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
       >
         {/* Col 1: Transport controls — centered in cell */}
         <div className="flex justify-center min-w-0 overflow-hidden">
-          <div className={`flex items-center gap-3 shrink-0 ${hasTrack ? "pointer-events-auto" : ""}`}>
+          <div className={`flex items-center gap-2 shrink-0 ${hasTrack ? "pointer-events-auto" : ""}`}>
             <button
               onClick={hasTrack ? toggleShuffle : undefined}
-              className={`transition-colors hidden sm:block ${!hasTrack ? disabledBtn : shuffle ? "text-blue-400" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors hidden sm:block ${!hasTrack ? disabledBtn : shuffle ? "text-blue-400" : "text-n-500 hover:text-n-200"}`}
               title={shuffle ? "Shuffle on" : "Shuffle off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -230,7 +230,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             </button>
             <button
               onClick={hasTrack ? prev : undefined}
-              className={hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}
+              className={`p-1.5 ${hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}`}
               title="Previous"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -254,7 +254,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             </button>
             <button
               onClick={hasTrack ? next : undefined}
-              className={hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}
+              className={`p-1.5 ${hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}`}
               title="Next"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -263,7 +263,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             </button>
             <button
               onClick={hasTrack ? cycleRepeat : undefined}
-              className={`transition-colors relative hidden sm:block ${!hasTrack ? disabledBtn : repeatMode !== "off" ? "text-blue-400" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors relative hidden sm:block ${!hasTrack ? disabledBtn : repeatMode !== "off" ? "text-blue-400" : "text-n-500 hover:text-n-200"}`}
               title={repeatMode === "one" ? "Repeat one" : repeatMode === "all" ? "Repeat all" : "Repeat off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

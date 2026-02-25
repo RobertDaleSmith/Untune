@@ -33,6 +33,7 @@ rodio = { version = "0.20", features = ["symphonia-all"] }
 symphonia = { version = "0.5", features = ["all"] }
 souvlaki = "0.7"
 plist = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24"

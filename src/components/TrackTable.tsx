@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect } from "react";
+import { useRef, useCallback, useState, useEffect, useLayoutEffect } from "react";
 import {
   createColumnHelper,
   flexRender,
@@ -15,6 +15,7 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useNavigationStore } from "../stores/navigationStore";
 import { TrackInfoModal } from "./TrackInfoModal";
+import { ArtworkSearchModal } from "./ArtworkSearchModal";
 import { revealInFinder } from "../lib/commands";
 
 const columnHelper = createColumnHelper<Track>();
@@ -111,7 +112,9 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     y: number;
     sortedIndex: number;
   } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const [infoTrackIndex, setInfoTrackIndex] = useState<number | null>(null);
+  const [artworkSearchTrack, setArtworkSearchTrack] = useState<{ artist: string; album: string } | null>(null);
   const { currentTrackId, play, togglePlayPause, scrollToNowPlaying } = usePlaybackStore();
   const setSelectedTrackIds = useLibraryStore((s) => s.setSelectedTrackIds);
   const { navigateToAlbum, navigateToArtist } = useNavigationStore();
@@ -215,6 +218,24 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     [selectedIndices, syncSelection],
   );
 
+  // Reposition context menu if it overflows the viewport
+  useLayoutEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+    const el = contextMenuRef.current;
+    const rect = el.getBoundingClientRect();
+    let { x, y } = contextMenu;
+    if (rect.bottom > window.innerHeight) {
+      y = window.innerHeight - rect.height - 4;
+    }
+    if (rect.right > window.innerWidth) {
+      x = window.innerWidth - rect.width - 4;
+    }
+    if (x !== contextMenu.x || y !== contextMenu.y) {
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    }
+  }, [contextMenu]);
+
   // Close context menu on any click or scroll
   useEffect(() => {
     if (!contextMenu) return;
@@ -231,48 +252,29 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: useCallback(() => ROW_HEIGHT, []),
-    overscan: 20,
+    overscan: 100,
     scrollPaddingStart: ROW_HEIGHT,
+    scrollPaddingEnd: ROW_HEIGHT,
   });
 
-  // Auto-scroll to the playing track when it changes — scroll just enough to
-  // bring the row into view. Double-rAF so layout has settled after the
-  // PlaybackBar appears/disappears and clientHeight is accurate.
+  // Auto-scroll to the playing track when it changes.
+  // Use virtualizer.scrollToIndex for instant, flicker-free scrolling.
+  // A single rAF fallback handles the edge case where the PlaybackBar
+  // appears/disappears and changes the container height.
   useEffect(() => {
     if (currentTrackId == null) return;
     const idx = rows.findIndex((r) => r.original.id === currentTrackId);
     if (idx < 0) return;
 
-    // Double rAF: first frame triggers layout, second reads correct dimensions
+    // Immediate scroll — virtualizer pre-computes visible rows synchronously
+    virtualizer.scrollToIndex(idx, { align: "auto" });
+
+    // Follow-up rAF to correct for any layout shift (e.g. PlaybackBar appearing)
     const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = parentRef.current;
-        if (!el) return;
-
-        // The sticky thead overlaps the top of the scroll area, so the
-        // visible content region is offset by the header height.
-        const thead = el.querySelector("thead");
-        const headerH = thead ? thead.getBoundingClientRect().height : 0;
-
-        // Row positions in the scrollable content (tbody starts after thead in flow)
-        const contentTop = headerH + idx * ROW_HEIGHT;
-        const contentBottom = contentTop + ROW_HEIGHT;
-
-        // Visible region within the scroll container
-        const visibleTop = el.scrollTop + headerH;
-        const visibleBottom = el.scrollTop + el.clientHeight;
-
-        if (contentTop < visibleTop) {
-          // Row is above — place it right below the sticky header
-          el.scrollTop = contentTop - headerH;
-        } else if (contentBottom > visibleBottom) {
-          // Row is below — place it flush with the bottom
-          el.scrollTop = contentBottom - el.clientHeight;
-        }
-      });
+      virtualizer.scrollToIndex(idx, { align: "auto" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [currentTrackId, rows, scrollToNowPlaying]);
+  }, [currentTrackId, rows, scrollToNowPlaying, virtualizer]);
 
   // Flash the playing row when jump-to-now-playing is triggered
   const prevScrollSignal = useRef(scrollToNowPlaying);
@@ -543,6 +545,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
         const isPlaying = track.id === currentTrackId;
         return (
           <div
+            ref={contextMenuRef}
             className="fixed z-50 min-w-[160px] py-1 bg-n-800 border border-n-700 rounded-lg shadow-xl text-xs"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
@@ -583,7 +586,21 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                   setContextMenu(null);
                 }}
               >
-                View in Finder
+                {navigator.platform.startsWith("Win") ? "Show in Explorer" : "Show in Finder"}
+              </button>
+            )}
+            {(track.album || track.artist) && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
+                onClick={() => {
+                  setArtworkSearchTrack({
+                    artist: track.albumArtist ?? track.artist ?? "",
+                    album: track.album ?? "",
+                  });
+                  setContextMenu(null);
+                }}
+              >
+                Find Album Artwork...
               </button>
             )}
             {(track.album || track.artist) && (
@@ -632,6 +649,27 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
               ? () => setInfoTrackIndex(infoTrackIndex + 1)
               : undefined
           }
+        />
+      )}
+
+      {/* Artwork search modal */}
+      {artworkSearchTrack && (
+        <ArtworkSearchModal
+          artist={artworkSearchTrack.artist}
+          album={artworkSearchTrack.album}
+          onClose={() => setArtworkSearchTrack(null)}
+          onApply={(result) => {
+            const store = useLibraryStore.getState();
+            const idSet = new Set(result.updatedTrackIds);
+            store.setTracks(
+              store.tracks.map((t) =>
+                idSet.has(t.id)
+                  ? { ...t, artworkHash: result.artworkHash }
+                  : t,
+              ),
+            );
+            setArtworkSearchTrack(null);
+          }}
         />
       )}
     </div>

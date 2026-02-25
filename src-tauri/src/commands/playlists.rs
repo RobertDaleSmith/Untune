@@ -1,7 +1,16 @@
+use serde::Deserialize;
 use tauri::State;
 
 use crate::db::{self, Database};
 use crate::models::{Playlist, Track};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistOrderUpdate {
+    pub id: i64,
+    pub sort_order: i32,
+    pub parent_id: Option<i64>,
+}
 
 #[tauri::command]
 pub fn get_playlists(db: State<'_, Database>) -> Result<Vec<Playlist>, String> {
@@ -77,4 +86,17 @@ pub fn create_playlist_folder(
 ) -> Result<i64, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     db::insert_playlist_folder(&conn, &name, parent_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reorder_playlists(
+    db: State<'_, Database>,
+    updates: Vec<PlaylistOrderUpdate>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let tuples: Vec<(i64, i32, Option<i64>)> = updates
+        .iter()
+        .map(|u| (u.id, u.sort_order, u.parent_id))
+        .collect();
+    db::reorder_playlists(&conn, &tuples).map_err(|e| e.to_string())
 }
