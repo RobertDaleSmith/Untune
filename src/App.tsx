@@ -97,10 +97,12 @@ function App() {
   const handleImportRef = useRef(handleImport);
   handleImportRef.current = handleImport;
 
-  // Initialize theme and column browser on mount
+  // Initialize stores on mount
   useEffect(() => {
     useThemeStore.getState().init();
     useColumnBrowserStore.getState().init();
+    useNavigationStore.getState().init();
+    usePlaybackStore.getState().init();
   }, []);
 
   // Listen for menu "Re-import Library", theme changes, and system media key events

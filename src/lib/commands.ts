@@ -106,6 +106,14 @@ export async function saveViewSettings(
   return invoke("save_view_settings", { viewKey, shuffle, repeatMode });
 }
 
+export async function setTrafficLightsVisible(visible: boolean): Promise<void> {
+  return invoke("set_traffic_lights_visible", { visible });
+}
+
+export async function revealInFinder(path: string): Promise<void> {
+  return invoke("reveal_in_finder", { path });
+}
+
 export async function getAlbums(): Promise<AlbumSummary[]> {
   return invoke<AlbumSummary[]>("get_albums");
 }

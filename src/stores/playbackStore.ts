@@ -14,6 +14,8 @@ import {
   setRepeatModeCmd,
   getViewSettings,
   saveViewSettings,
+  getPreference,
+  setPreference,
 } from "../lib/commands";
 
 interface PlaybackState {
@@ -29,6 +31,7 @@ interface PlaybackState {
   playError: string | null;
   scrollToNowPlaying: number;
   _pollTimer: ReturnType<typeof setInterval> | null;
+  _positionSaveTimer: ReturnType<typeof setInterval> | null;
   _errorTimer: ReturnType<typeof setTimeout> | null;
 
   showError: (msg: string) => void;
@@ -46,6 +49,7 @@ interface PlaybackState {
   startPolling: () => void;
   stopPolling: () => void;
   poll: () => Promise<void>;
+  init: () => Promise<void>;
 }
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
@@ -61,6 +65,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   playError: null,
   scrollToNowPlaying: 0,
   _pollTimer: null,
+  _positionSaveTimer: null,
   _errorTimer: null,
 
   showError: (msg: string) => {
@@ -90,6 +95,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         isPlaying: true,
         position: 0,
       });
+      setPreference("session.trackId", String(trackIds[startIndex])).catch(() => {});
+      setPreference("session.position", "0").catch(() => {});
       // Apply view settings after playback started (PlaybackInner now exists)
       if (viewSettings) {
         await setShuffleCmd(viewSettings.shuffle);
@@ -109,9 +116,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   resume: async () => {
-    await resumePlayback();
-    set({ isPlaying: true });
-    get().startPolling();
+    try {
+      await resumePlayback();
+      set({ isPlaying: true });
+      get().startPolling();
+    } catch {
+      // Cold start: no audio backend loaded yet, re-queue the single track
+      const trackId = get().currentTrackId;
+      const pos = get().position;
+      if (trackId != null) {
+        await playQueue([trackId], 0);
+        if (pos > 0) await seekPlayback(pos);
+        set({ isPlaying: true });
+        get().startPolling();
+      }
+    }
   },
 
   togglePlayPause: async () => {
@@ -127,6 +146,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       const trackId = await nextTrack();
       if (trackId != null) {
         set({ currentTrackId: trackId, position: 0, isPlaying: true });
+        setPreference("session.trackId", String(trackId)).catch(() => {});
+        setPreference("session.position", "0").catch(() => {});
         get().startPolling();
       }
     } catch (e) {
@@ -139,6 +160,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       const trackId = await previousTrack();
       if (trackId != null) {
         set({ currentTrackId: trackId, position: 0, isPlaying: true });
+        setPreference("session.trackId", String(trackId)).catch(() => {});
+        setPreference("session.position", "0").catch(() => {});
         get().startPolling();
       }
     } catch (e) {
@@ -221,14 +244,46 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const existing = get()._pollTimer;
     if (existing) return; // Already polling
     const timer = setInterval(() => get().poll(), 500);
-    set({ _pollTimer: timer });
+    // Save position to preferences every 10 seconds
+    const posSaveTimer = setInterval(() => {
+      const { currentTrackId, position } = get();
+      if (currentTrackId != null) {
+        setPreference("session.position", String(position)).catch(() => {});
+      }
+    }, 10_000);
+    set({ _pollTimer: timer, _positionSaveTimer: posSaveTimer });
   },
 
   stopPolling: () => {
     const timer = get()._pollTimer;
-    if (timer) {
-      clearInterval(timer);
-      set({ _pollTimer: null });
+    const posTimer = get()._positionSaveTimer;
+    if (timer) clearInterval(timer);
+    if (posTimer) clearInterval(posTimer);
+    // Final position save
+    const { currentTrackId, position } = get();
+    if (currentTrackId != null) {
+      setPreference("session.position", String(position)).catch(() => {});
+    }
+    set({ _pollTimer: null, _positionSaveTimer: null });
+  },
+
+  init: async () => {
+    try {
+      const [trackIdStr, posStr] = await Promise.all([
+        getPreference("session.trackId"),
+        getPreference("session.position"),
+      ]);
+      if (!trackIdStr) return;
+      const trackId = parseInt(trackIdStr, 10);
+      if (isNaN(trackId)) return;
+      const position = posStr ? parseFloat(posStr) : 0;
+      set({
+        currentTrackId: trackId,
+        position: isNaN(position) ? 0 : position,
+        isPlaying: false,
+      });
+    } catch {
+      // Ignore corrupt preferences
     }
   },
 }));

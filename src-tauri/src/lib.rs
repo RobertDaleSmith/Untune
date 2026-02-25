@@ -17,6 +17,29 @@ use std::sync::Mutex;
 use tauri::{image::Image, Emitter, Manager};
 use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
+fn set_traffic_lights_visible(window: tauri::Window, visible: bool) {
+    use cocoa::appkit::NSWindowButton;
+    use objc::{msg_send, sel, sel_impl};
+
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        let buttons = [
+            NSWindowButton::NSWindowCloseButton,
+            NSWindowButton::NSWindowMiniaturizeButton,
+            NSWindowButton::NSWindowZoomButton,
+        ];
+        for btn_type in &buttons {
+            let btn: cocoa::base::id = msg_send![ns_window, standardWindowButton:*btn_type];
+            if btn != cocoa::base::nil {
+                let _: () = msg_send![btn, setHidden:!visible];
+            }
+        }
+    }
+}
+
 struct ThemeMenuItems {
     light: CheckMenuItem<tauri::Wry>,
     dark: CheckMenuItem<tauri::Wry>,
@@ -425,6 +448,7 @@ pub fn run() {
             commands::tracks::get_tracks,
             commands::tracks::get_track_count,
             commands::tracks::search_tracks,
+            commands::tracks::reveal_in_finder,
             commands::playlists::get_playlists,
             commands::playlists::get_playlist_tracks,
             commands::playback::play_track,
@@ -460,6 +484,7 @@ pub fn run() {
             commands::playlists::delete_playlist,
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,
+            set_traffic_lights_visible,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

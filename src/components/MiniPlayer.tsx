@@ -47,11 +47,8 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
     >
       {/* Main content row */}
       <div className="flex-1 flex items-center min-h-0">
-        {/* Left padding for macOS traffic light buttons */}
-        <div className="w-[72px] flex-shrink-0" />
-
         {/* Artwork */}
-        <div className="w-14 h-14 flex-shrink-0 rounded bg-n-900 flex items-center justify-center overflow-hidden">
+        <div className="w-[44px] h-[44px] flex-shrink-0 bg-n-900 flex items-center justify-center overflow-hidden">
           {currentArtworkUrl ? (
             <img
               src={currentArtworkUrl}

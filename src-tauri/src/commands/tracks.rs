@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::path::Path;
 use tauri::State;
 
 use crate::db::{self, Database};
@@ -40,4 +41,18 @@ pub fn search_tracks(
 ) -> Result<Vec<Track>, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     db::search_tracks(&conn, &query, limit.unwrap_or(200)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reveal_in_finder(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err("File not found".to_string());
+    }
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }

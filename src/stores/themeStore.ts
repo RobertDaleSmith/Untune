@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
-import { getPreference, setPreference } from "../lib/commands";
+import { getPreference, setPreference, setTrafficLightsVisible } from "../lib/commands";
 
 type Theme = "light" | "dark" | "system";
 
@@ -103,9 +103,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       });
       await win.setResizable(false);
       await win.setAlwaysOnTop(true);
-      await win.setMinSize(new LogicalSize(350, 80));
-      await win.setSize(new LogicalSize(350, 80));
+      await setTrafficLightsVisible(false);
+      await win.setMinSize(new LogicalSize(350, 44));
+      await win.setSize(new LogicalSize(350, 44));
     } else {
+      await setTrafficLightsVisible(true);
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
       const saved = get()._savedWindowGeometry;

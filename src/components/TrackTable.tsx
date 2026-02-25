@@ -15,6 +15,7 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useNavigationStore } from "../stores/navigationStore";
 import { TrackInfoModal } from "./TrackInfoModal";
+import { revealInFinder } from "../lib/commands";
 
 const columnHelper = createColumnHelper<Track>();
 
@@ -574,6 +575,17 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             >
               Get Info
             </button>
+            {track.filePath && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
+                onClick={() => {
+                  revealInFinder(track.filePath!);
+                  setContextMenu(null);
+                }}
+              >
+                View in Finder
+              </button>
+            )}
             {(track.album || track.artist) && (
               <>
                 <div className="my-1 border-t border-n-700" />
