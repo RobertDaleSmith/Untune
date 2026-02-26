@@ -79,6 +79,16 @@
 - [ ] **BPM-matched transitions** — DJ-style smooth transitions between tracks with similar tempos
 - [ ] **Auto-normalize** — AI-informed loudness matching across tracks
 
+## AI — Voice Assistant ("Hey Waves")
+
+- [ ] **Voice input** — speech-to-text via Whisper (local whisper.cpp in Rust) or cloud API (Deepgram/AssemblyAI)
+- [ ] **Wake word detection** — "Hey Waves" always-listening trigger, or push-to-talk hotkey
+- [ ] **Conversational LLM brain** — Claude API with tool-use to query library DB, control playback, build playlists
+- [ ] **Voice output** — text-to-speech via ElevenLabs / OpenAI TTS / Cartesia, streamed for low latency
+- [ ] **Music ducking** — auto-lower music volume while assistant speaks, restore after
+- [ ] **Conversational context** — remember recent exchanges within a session ("play more like that", "skip this one")
+- [ ] **Latency target** — voice-in to voice-out in <2s (STT ~300ms → LLM streaming ~1s → TTS first chunk ~300ms)
+
 ## Future Platform Targets
 
 - [ ] **Web mode** — Axum HTTP server serving the same UI in a browser
