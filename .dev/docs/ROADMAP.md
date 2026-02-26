@@ -55,6 +55,30 @@
 - [ ] **Settings/preferences panel** — dedicated UI for all configurable options (currently spread across localStorage + DB prefs)
 - [ ] **Tooltip system** — consistent hover tooltips across all controls
 
+## AI — Discovery & Recommendations
+
+- [ ] **"Play something like this"** — given the current track, generate a queue of similar tracks from your library using embedding similarity (tempo, genre, mood, energy)
+- [ ] **Smart radio** — endless auto-queue that learns from listening patterns, skips, and ratings
+- [ ] **Mood-based playlists** — auto-generate "energetic", "chill", "focus", "melancholy" playlists from audio analysis or metadata
+- [ ] **Natural language search** — "that jazz album from the 60s" or "songs I listened to a lot last summer"
+- [ ] **Chat with your library** — ask questions like "what's my most played genre this month?" or "recommend something I haven't listened to in a while"
+
+## AI — Library Intelligence
+
+- [ ] **Auto-genre/mood tagging** — classify untagged tracks using audio embeddings or LLM analyzing artist+title+album
+- [ ] **Smart duplicate detection** — fuzzy matching beyond exact hashes (same song, different masters/remixes)
+- [ ] **Auto-fill missing metadata** — LLM-assisted lookup for incomplete tags
+- [ ] **Album/artist bios** — fetch or generate contextual info shown in detail views
+- [ ] **Audio fingerprinting** — identify unknown tracks, match duplicates across formats
+- [ ] **Key detection** — detect musical key for harmonic mixing
+- [ ] **Mood/energy scoring** — per-track scores stored in DB, usable as smart playlist rules
+
+## AI — Playback & Mix
+
+- [ ] **Smart crossfade** — analyze track endings/beginnings to pick optimal crossfade duration per transition
+- [ ] **BPM-matched transitions** — DJ-style smooth transitions between tracks with similar tempos
+- [ ] **Auto-normalize** — AI-informed loudness matching across tracks
+
 ## Future Platform Targets
 
 - [ ] **Web mode** — Axum HTTP server serving the same UI in a browser
