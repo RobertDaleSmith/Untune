@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getTrackAllArtworks, fetchLyrics } from "../lib/commands";
 import { extractAccentColor } from "../lib/extractAccentColor";
+import { usePlaybackStore } from "../stores/playbackStore";
 import { SyncedLyrics } from "./SyncedLyrics";
 import { Visualizer, ALL_MODES } from "./Visualizer";
 import type { VisualizerMode } from "./Visualizer";
@@ -56,6 +57,69 @@ export function ArtworkLightbox({
   );
   const [artColor, setArtColor] = useState<[number, number, number]>([255, 255, 255]);
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Progress bar seek state
+  const { position: playbackPosition, duration: playbackDuration, seek } = usePlaybackStore();
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const isDraggingBarRef = useRef(false);
+  const lastBarSeekRef = useRef(0);
+  const [dragBarPosition, setDragBarPosition] = useState<number | null>(null);
+
+  const computeBarPosition = useCallback(
+    (clientX: number): number | null => {
+      if (!progressBarRef.current || !playbackDuration) return null;
+      const rect = progressBarRef.current.getBoundingClientRect();
+      const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      return fraction * playbackDuration;
+    },
+    [playbackDuration],
+  );
+
+  const handleBarMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const pos = computeBarPosition(e.clientX);
+      if (pos == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isDraggingBarRef.current = true;
+      setDragBarPosition(pos);
+      seek(pos);
+      lastBarSeekRef.current = Date.now();
+    },
+    [computeBarPosition, seek],
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingBarRef.current) return;
+      const pos = computeBarPosition(e.clientX);
+      if (pos == null) return;
+      setDragBarPosition(pos);
+      const now = Date.now();
+      if (now - lastBarSeekRef.current > 150) {
+        seek(pos);
+        lastBarSeekRef.current = now;
+      }
+    };
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!isDraggingBarRef.current) return;
+      isDraggingBarRef.current = false;
+      const pos = computeBarPosition(e.clientX);
+      if (pos != null) seek(pos);
+      setDragBarPosition(null);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [computeBarPosition, seek]);
+
+  const displayBarPosition = dragBarPosition ?? playbackPosition;
+  const progressPct = playbackDuration && playbackDuration > 0
+    ? (displayBarPosition / playbackDuration) * 100
+    : 0;
 
   const visualizerActive = activeModes.size > 0;
 
@@ -381,6 +445,36 @@ export function ArtworkLightbox({
           </div>
         )}
 
+        {/* Progress bar */}
+        {isOpen && (
+          <div
+            ref={progressBarRef}
+            onMouseDown={handleBarMouseDown}
+            className="fixed bottom-0 left-0 right-0 z-[5] cursor-pointer"
+            style={{
+              height: controlsVisible ? 12 : 6,
+              transition: "height 0.3s ease",
+            }}
+          >
+            <div
+              className="absolute bottom-0 left-0 right-0 bg-white/10 overflow-hidden"
+              style={{
+                height: controlsVisible ? 6 : 2,
+                transition: "height 0.3s ease, opacity 0.3s ease",
+                opacity: controlsVisible ? 1 : 0.3,
+              }}
+            >
+              <div
+                className="h-full"
+                style={{
+                  width: `${progressPct}%`,
+                  backgroundColor: `rgba(${artColor[0]}, ${artColor[1]}, ${artColor[2]}, 0.8)`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {toggleButtons}
 
         {/* Left: artwork */}
@@ -558,6 +652,36 @@ export function ArtworkLightbox({
               background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%)",
             }}
           />
+        </div>
+      )}
+
+      {/* Progress bar */}
+      {isOpen && (
+        <div
+          ref={progressBarRef}
+          onMouseDown={handleBarMouseDown}
+          className="fixed bottom-0 left-0 right-0 z-[5] cursor-pointer"
+          style={{
+            height: controlsVisible ? 12 : 6,
+            transition: "height 0.3s ease",
+          }}
+        >
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-white/10 overflow-hidden"
+            style={{
+              height: controlsVisible ? 6 : 2,
+              transition: "height 0.3s ease, opacity 0.3s ease",
+              opacity: controlsVisible ? 1 : 0.3,
+            }}
+          >
+            <div
+              className="h-full"
+              style={{
+                width: `${progressPct}%`,
+                backgroundColor: `rgba(${artColor[0]}, ${artColor[1]}, ${artColor[2]}, 0.8)`,
+              }}
+            />
+          </div>
         </div>
       )}
 
