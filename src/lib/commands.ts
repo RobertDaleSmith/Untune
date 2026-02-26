@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AlbumSummary,
   ArtistSummary,
+  AssistantResponse,
   GenreSummary,
   ImportStats,
   PlaybackInfo,
@@ -307,4 +308,44 @@ export async function fetchLyrics(
   duration: number | null,
 ): Promise<LyricsResult> {
   return invoke<LyricsResult>("fetch_lyrics", { trackName, artistName, albumName, duration });
+}
+
+// --- Assistant ---
+
+export async function assistantAvailable(): Promise<boolean> {
+  return invoke<boolean>("assistant_available");
+}
+
+export async function hasAssistantApiKey(): Promise<boolean> {
+  return invoke<boolean>("has_assistant_api_key");
+}
+
+export async function setAssistantApiKey(key: string): Promise<void> {
+  return invoke("set_assistant_api_key", { key });
+}
+
+export async function assistantSendMessage(message: string): Promise<AssistantResponse> {
+  return invoke<AssistantResponse>("assistant_send_message", { message });
+}
+
+export async function assistantClearHistory(): Promise<void> {
+  return invoke("assistant_clear_history");
+}
+
+// --- Speech ---
+
+export async function checkSpeechPermission(): Promise<string> {
+  return invoke<string>("check_speech_permission");
+}
+
+export async function requestSpeechPermission(): Promise<void> {
+  return invoke("request_speech_permission");
+}
+
+export async function startSpeechRecognition(): Promise<void> {
+  return invoke("start_speech_recognition");
+}
+
+export async function stopSpeechRecognition(): Promise<void> {
+  return invoke("stop_speech_recognition");
 }

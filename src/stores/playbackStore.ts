@@ -344,5 +344,28 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       // Refresh device list so isDefault flags update
       get().refreshDevices();
     }).catch(() => {});
+
+    // Listen for playback changes triggered by the assistant
+    listen("assistant-playback-changed", async () => {
+      try {
+        const info = await getPlaybackInfo();
+        set({
+          isPlaying: info.isPlaying,
+          currentTrackId: info.trackId,
+          position: info.position,
+          duration: info.duration,
+          volume: info.volume,
+          shuffle: info.shuffle,
+          repeatMode: info.repeatMode,
+          queueSource: get().queueSource ?? "assistant",
+          _restoredFromSession: false,
+        });
+        if (info.isPlaying) {
+          get().startPolling();
+        }
+      } catch {
+        // Ignore sync errors
+      }
+    }).catch(() => {});
   },
 }));

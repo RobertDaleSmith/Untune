@@ -116,3 +116,29 @@ export interface ViewSettings {
   shuffle: boolean;
   repeatMode: string;
 }
+
+// --- Assistant ---
+
+export type AssistantStatus = "idle" | "listening" | "processing" | "speaking";
+
+export interface AssistantMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  toolCalls?: AssistantToolCall[];
+  timestamp: number;
+}
+
+export interface AssistantToolCall {
+  tool: string;
+  input: Record<string, unknown>;
+}
+
+export interface AssistantResponse {
+  text: string;
+}
+
+export interface SpeechTranscript {
+  text: string;
+  isFinal: boolean;
+}

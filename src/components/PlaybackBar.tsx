@@ -4,6 +4,7 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useNavigationStore } from "../stores/navigationStore";
 import { formatDuration } from "../utils/formatters";
 import { SearchBar } from "./SearchBar";
+import { AssistantButton } from "./AssistantButton";
 import type { Track } from "../lib/types";
 
 function MarqueeText({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -431,6 +432,9 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                     <polygon points="12,15 17,21 7,21" fill="currentColor" stroke="none" />
                   </svg>
                 </button>
+              </div>
+              <div className="relative hidden sm:block">
+                <AssistantButton />
               </div>
             </div>
           </div>

@@ -1,4 +1,5 @@
 mod analyzer;
+mod assistant;
 #[cfg(target_os = "macos")]
 mod airplay;
 mod audio;
@@ -11,7 +12,10 @@ pub mod media;
 mod models;
 mod playback;
 mod smart_playlists;
+#[cfg(target_os = "macos")]
+mod speech;
 
+use assistant::state::AssistantState;
 use db::Database;
 use media::MediaControlsState;
 use playback::{PlaybackState, RepeatMode};
@@ -106,8 +110,15 @@ pub fn run() {
                 db::get_preference(&conn, "columnBrowserAlbumArtist").ok().flatten()
             };
 
+            let assistant = AssistantState::new();
+            {
+                let conn = db.conn.lock().unwrap();
+                assistant.init_from_db(&conn);
+            }
+
             app.manage(db);
             app.manage(PlaybackState::new());
+            app.manage(assistant);
 
             // Set window/dock icon
             if let Some(window) = app.get_webview_window("main") {
@@ -341,6 +352,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             dock_menu::setup_dock_menu(app.handle());
 
+            // Initialize native speech recognition
+            #[cfg(target_os = "macos")]
+            speech::init_speech(app.handle());
+
             // Start monitoring for audio output device changes (AirPlay, etc.)
             // Deferred to a background thread to avoid interfering with souvlaki/media
             // controls initialization that also happens during setup on the main thread.
@@ -532,6 +547,15 @@ pub fn run() {
             commands::airplay::get_audio_route,
             commands::airplay::get_audio_devices,
             commands::airplay::set_audio_device,
+            commands::assistant::assistant_available,
+            commands::assistant::has_assistant_api_key,
+            commands::assistant::set_assistant_api_key,
+            commands::assistant::assistant_send_message,
+            commands::assistant::assistant_clear_history,
+            commands::speech::check_speech_permission,
+            commands::speech::request_speech_permission,
+            commands::speech::start_speech_recognition,
+            commands::speech::stop_speech_recognition,
             set_traffic_lights_visible,
         ])
         .run(tauri::generate_context!())

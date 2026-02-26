@@ -1,4 +1,5 @@
 pub mod airplay;
+pub mod assistant;
 pub mod import;
 pub mod tracks;
 pub mod playlists;
@@ -7,3 +8,4 @@ pub mod browse;
 pub mod artwork;
 pub mod preferences;
 pub mod lyrics;
+pub mod speech;

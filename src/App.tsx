@@ -11,6 +11,9 @@ import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
 import { ContentRouter } from "./components/ContentRouter";
 import { StatusBar } from "./components/StatusBar";
+import { AssistantPanel } from "./components/AssistantPanel";
+import { AssistantApiKeyModal } from "./components/AssistantApiKeyModal";
+import { useAssistantStore } from "./stores/assistantStore";
 import { useDragRegion } from "./hooks/useDragRegion";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
@@ -103,6 +106,7 @@ function App() {
     useColumnBrowserStore.getState().init();
     useNavigationStore.getState().init();
     usePlaybackStore.getState().init();
+    useAssistantStore.getState().init();
   }, []);
 
   // Listen for menu "Re-import Library", theme changes, and system media key events
@@ -273,6 +277,9 @@ function App() {
         // Scroll to bottom of current list
         const el = document.querySelector<HTMLElement>(".flex-1.overflow-auto");
         if (el) el.scrollTop = el.scrollHeight;
+      } else if (e.key === "j" && e.metaKey) {
+        e.preventDefault();
+        useAssistantStore.getState().toggle();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -586,6 +593,9 @@ function App() {
           </div>
         </div>
       </div>
+
+      <AssistantPanel />
+      <AssistantApiKeyModal />
     </div>
   );
 }
