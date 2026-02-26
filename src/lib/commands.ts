@@ -195,6 +195,10 @@ export async function updateSmartPlaylist(
   return invoke("update_smart_playlist", { playlistId, name, rulesJson });
 }
 
+export async function renamePlaylist(playlistId: number, newName: string): Promise<void> {
+  return invoke("rename_playlist", { playlistId, newName });
+}
+
 export async function deletePlaylist(playlistId: number): Promise<void> {
   return invoke("delete_playlist", { playlistId });
 }

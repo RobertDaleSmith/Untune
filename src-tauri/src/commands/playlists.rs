@@ -56,6 +56,16 @@ pub fn update_smart_playlist(
 }
 
 #[tauri::command]
+pub fn rename_playlist(
+    db: State<'_, Database>,
+    playlist_id: i64,
+    new_name: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    db::rename_playlist(&conn, playlist_id, &new_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn delete_playlist(db: State<'_, Database>, playlist_id: i64) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     db::delete_playlist(&conn, playlist_id).map_err(|e| e.to_string())

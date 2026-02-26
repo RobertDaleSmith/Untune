@@ -173,6 +173,14 @@ pub fn update_smart_playlist(
     Ok(())
 }
 
+pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE playlists SET name = ? WHERE id = ?",
+        rusqlite::params![name, id],
+    )?;
+    Ok(())
+}
+
 pub fn delete_playlist(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", rusqlite::params![id])?;
     conn.execute("DELETE FROM playlists WHERE id = ?", rusqlite::params![id])?;

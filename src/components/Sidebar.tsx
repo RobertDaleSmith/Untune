@@ -2,10 +2,37 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationStore, type View } from "../stores/navigationStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getPlaylists, deletePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder } from "../lib/commands";
+import { getPlaylists, getPlaylistTracks, deletePlaylist, renamePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder } from "../lib/commands";
 import { ArtworkLightbox } from "./ArtworkLightbox";
 import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import type { Playlist } from "../lib/types";
+
+const libraryIcons: Record<View, React.ReactNode> = {
+  songs: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+      <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+    </svg>
+  ),
+  albums: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+      <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  artists: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+    </svg>
+  ),
+  genres: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" />
+    </svg>
+  ),
+  playlist: null,
+  "album-detail": null,
+  "artist-detail": null,
+  "genre-detail": null,
+};
 
 const libraryItems: { label: string; view: View }[] = [
   { label: "Songs", view: "songs" },
@@ -48,13 +75,13 @@ function buildPlaylistTree(playlists: Playlist[]) {
 function SmartIcon({ native }: { native: boolean }) {
   return (
     <svg
-      width="12"
-      height="12"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
-      className={`shrink-0 ${native ? "opacity-80" : "opacity-40"}`}
+      className={`shrink-0 w-[14px] ${native ? "opacity-80" : "opacity-40"}`}
     >
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -81,6 +108,10 @@ export function Sidebar() {
     y: number;
     playlist: Playlist;
   } | null>(null);
+
+  // Inline rename state
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   // New playlist menu state
   const [newMenuOpen, setNewMenuOpen] = useState(false);
@@ -202,6 +233,36 @@ export function Sidebar() {
     },
     [refreshPlaylists, playlistId, navigateTo],
   );
+
+  const handleStartRename = useCallback((pl: Playlist) => {
+    setContextMenu(null);
+    setRenamingId(pl.id);
+    setRenameValue(pl.name);
+  }, []);
+
+  const handleCommitRename = useCallback(
+    async (id: number, name: string) => {
+      const trimmed = name.trim();
+      setRenamingId(null);
+      if (!trimmed) return;
+      try {
+        await renamePlaylist(id, trimmed);
+        refreshPlaylists();
+        // Update navigation title if we're viewing this playlist
+        const nav = useNavigationStore.getState();
+        if (nav.view === "playlist" && nav.playlistId === id) {
+          navigateToPlaylist(id, trimmed);
+        }
+      } catch (err) {
+        console.error("Failed to rename playlist:", err);
+      }
+    },
+    [refreshPlaylists, navigateToPlaylist],
+  );
+
+  const handleCancelRename = useCallback(() => {
+    setRenamingId(null);
+  }, []);
 
   const handleEditorSave = useCallback(
     (_id: number) => {
@@ -419,6 +480,14 @@ export function Sidebar() {
           if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
           navigateToPlaylist(pl.id, pl.name);
         }}
+        onDoubleClick={async () => {
+          if (pl.isFolder) return;
+          const tracks = await getPlaylistTracks(pl.id);
+          if (tracks.length > 0) {
+            const ids = tracks.map((t) => t.id);
+            usePlaybackStore.getState().play(ids, 0, `playlist-${pl.id}`);
+          }
+        }}
         onContextMenu={(e) => handleContextMenu(e, pl)}
         className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors flex items-center gap-1 ${
           view === "playlist" && playlistId === pl.id
@@ -427,8 +496,32 @@ export function Sidebar() {
         } ${dragId === pl.id ? "opacity-30 scale-95" : ""} ${drop.className}`}
         style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: "8px", transition: "opacity 150ms, transform 150ms, margin 150ms", ...drop.style }}
       >
-        {pl.isSmart && <SmartIcon native={isNativeSmart(pl)} />}
-        <span className="truncate">{pl.name}</span>
+        {pl.isSmart ? (
+          <SmartIcon native={isNativeSmart(pl)} />
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 w-[14px] opacity-40">
+            <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+          </svg>
+        )}
+        {renamingId === pl.id ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onBlur={() => handleCommitRename(pl.id, renameValue)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.currentTarget.blur(); }
+              else if (e.key === "Escape") { handleCancelRename(); }
+              e.stopPropagation();
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 bg-n-700 text-n-100 text-sm rounded px-1 py-0 outline-none border border-accent/50"
+          />
+        ) : (
+          <span className="truncate">{pl.name}</span>
+        )}
       </button>
     );
   };
@@ -447,21 +540,41 @@ export function Sidebar() {
             if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
             toggleFolder(folder.id);
           }}
+          onContextMenu={(e) => handleContextMenu(e, folder)}
           className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors text-n-400 hover:text-n-200 hover:bg-n-800/50 flex items-center gap-1 ${
             dragId === folder.id ? "opacity-30 scale-95" : ""
           } ${drop.className}`}
-          style={{ paddingLeft: `${4 + depth * 12}px`, paddingRight: "8px", transition: "opacity 150ms, transform 150ms, margin 150ms", ...drop.style }}
+          style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: "8px", transition: "opacity 150ms, transform 150ms, margin 150ms", ...drop.style }}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="currentColor"
-            className={`shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-          >
-            <path d="M4.5 2L8.5 6L4.5 10V2Z" />
-          </svg>
-          <span className="truncate">{folder.name}</span>
+          {isExpanded ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 w-[14px] opacity-40">
+              <path d="M20 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v10z" />
+              <path d="M4 11h16" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 w-[14px] opacity-40">
+              <path d="M20 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v10z" />
+            </svg>
+          )}
+          {renamingId === folder.id ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              onBlur={() => handleCommitRename(folder.id, renameValue)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.currentTarget.blur(); }
+                else if (e.key === "Escape") { handleCancelRename(); }
+                e.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="flex-1 min-w-0 bg-n-700 text-n-100 text-sm rounded px-1 py-0 outline-none border border-accent/50"
+            />
+          ) : (
+            <span className="truncate">{folder.name}</span>
+          )}
         </button>
         {isExpanded && children.map((child) =>
           child.isFolder
@@ -485,12 +598,13 @@ export function Sidebar() {
           <button
             key={item.view}
             onClick={() => navigateTo(item.view)}
-            className={`w-full text-left px-2 py-1 text-sm rounded-md transition-colors ${
+            className={`w-full text-left px-2 py-1 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
               view === item.view
                 ? "bg-accent/20 text-n-100"
                 : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
             }`}
           >
+            {libraryIcons[item.view]}
             {item.label}
           </button>
         ))}
@@ -608,6 +722,12 @@ export function Sidebar() {
           className="fixed z-50 bg-n-800 border border-n-700 rounded-md shadow-lg py-1 min-w-[140px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
+          <button
+            onClick={() => handleStartRename(contextMenu.playlist)}
+            className="w-full text-left px-3 py-1.5 text-xs text-n-200 hover:bg-n-700 transition-colors"
+          >
+            Rename
+          </button>
           {isNativeSmart(contextMenu.playlist) && (
             <button
               onClick={() => handleEditSmartPlaylist(contextMenu.playlist)}

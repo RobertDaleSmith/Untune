@@ -524,6 +524,7 @@ pub fn run() {
             commands::lyrics::fetch_lyrics,
             commands::playlists::create_smart_playlist,
             commands::playlists::update_smart_playlist,
+            commands::playlists::rename_playlist,
             commands::playlists::delete_playlist,
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,
