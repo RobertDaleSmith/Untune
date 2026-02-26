@@ -66,6 +66,11 @@ html, body, #root {
   -webkit-user-select: none;
 }
 
+/* Allow HTML5 drag-and-drop on draggable elements (WebKit blocks drag when user-select is none) */
+[draggable="true"] {
+  -webkit-user-drag: element;
+}
+
 @keyframes indeterminate {
   0% { transform: translateX(-100%); width: 40%; }
   50% { width: 60%; }
