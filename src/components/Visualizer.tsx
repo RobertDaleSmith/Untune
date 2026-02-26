@@ -4,7 +4,7 @@ import type { FrequencyData } from "../lib/commands";
 
 export type VisualizerMode = "bars" | "waveform" | "particles" | "geometry" | "digital";
 
-export const ALL_MODES: VisualizerMode[] = ["bars", "waveform", "particles", "geometry", "digital"];
+export const ALL_MODES: VisualizerMode[] = ["bars", "digital", "geometry", "particles", "waveform"];
 
 interface VisualizerProps {
   modes: VisualizerMode[];
@@ -33,6 +33,12 @@ export function Visualizer({ modes, color }: VisualizerProps) {
   const digitalPeaks = useRef<number[]>(new Array(64).fill(0));
   const digitalPeakDecay = useRef<number[]>(new Array(64).fill(0));
   const lastTimeRef = useRef(0);
+
+  // Store modes and color in refs so the animation loop never restarts on prop changes
+  const modesRef = useRef(modes);
+  modesRef.current = modes;
+  const colorRef = useRef(color);
+  colorRef.current = color;
 
   const animate = useCallback(
     (time: number) => {
@@ -68,8 +74,8 @@ export function Visualizer({ modes, color }: VisualizerProps) {
       const waveform = smoothedWaveform.current;
       const energy = smoothedEnergy.current;
 
-      const c = color ?? null;
-      for (const m of modes) {
+      const c = colorRef.current ?? null;
+      for (const m of modesRef.current) {
         switch (m) {
           case "geometry":
             renderGeometry(ctx, w, h, bands, energy, dt, geometryRotation, c);
@@ -91,7 +97,7 @@ export function Visualizer({ modes, color }: VisualizerProps) {
 
       rafRef.current = requestAnimationFrame(animate);
     },
-    [modes, color],
+    [],
   );
 
   useEffect(() => {
@@ -129,6 +135,7 @@ export function Visualizer({ modes, color }: VisualizerProps) {
   return (
     <canvas
       ref={canvasRef}
+      data-tauri-drag-region
       className="absolute inset-0 w-full h-full"
     />
   );
@@ -418,20 +425,21 @@ function renderDigital(
   const gap = 1.5;
   const cellW = (lw - gap * (cols + 1)) / cols;
   const cellH = (regionH - gap * (rows + 1)) / rows;
+  const offsetY = lh - regionH;
 
   for (let col = 0; col < cols; col++) {
     const b1 = bands[col * 2] ?? 0;
     const b2 = bands[col * 2 + 1] ?? 0;
-    const level = (b1 + b2) / 2;
+    const level = Math.min(1, ((b1 + b2) / 2) * 1.8);
     const litRows = Math.round(level * rows);
 
     if (litRows >= peaks[col]) {
       peaks[col] = litRows;
-      peakDecay[col] = 0.6;
+      peakDecay[col] = 0.25;
     } else {
       peakDecay[col] -= dt;
       if (peakDecay[col] <= 0) {
-        peaks[col] = Math.max(0, peaks[col] - dt * 20);
+        peaks[col] = Math.max(0, peaks[col] - dt * 50);
       }
     }
 
@@ -439,23 +447,23 @@ function renderDigital(
 
     for (let row = 0; row < rows; row++) {
       const invertedRow = rows - 1 - row;
-      const y = gap + row * (cellH + gap);
+      const y = offsetY + gap + row * (cellH + gap);
 
       const isLit = invertedRow < litRows;
       const isPeak = Math.abs(invertedRow - Math.round(peaks[col])) < 1 && peaks[col] > 0;
 
       if (isLit) {
-        const intensity = 0.5 + (invertedRow / rows) * 0.5;
+        const intensity = 0.6 + (invertedRow / rows) * 0.4;
         const r = Math.min(255, Math.round(cr * intensity));
         const g = Math.min(255, Math.round(cg * intensity));
         const b = Math.min(255, Math.round(cb * intensity));
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.85)`;
-        ctx.shadowColor = `rgba(${cr}, ${cg}, ${cb}, 0.4)`;
-        ctx.shadowBlur = 4;
-      } else if (isPeak) {
-        ctx.fillStyle = `rgba(${cr}, ${cg}, ${cb}, 0.9)`;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.95)`;
         ctx.shadowColor = `rgba(${cr}, ${cg}, ${cb}, 0.6)`;
         ctx.shadowBlur = 6;
+      } else if (isPeak) {
+        ctx.fillStyle = `rgba(${cr}, ${cg}, ${cb}, 1)`;
+        ctx.shadowColor = `rgba(${cr}, ${cg}, ${cb}, 0.8)`;
+        ctx.shadowBlur = 8;
       } else {
         ctx.fillStyle = `rgba(${cr}, ${cg}, ${cb}, 0.04)`;
         ctx.shadowBlur = 0;

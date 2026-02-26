@@ -196,8 +196,14 @@ export function ArtworkLightbox({
   const hasLyrics = lyricsAvailable === "available";
   const hasInfo = trackInfo && (trackInfo.title || trackInfo.artist || trackInfo.album);
 
-  const vpW = window.innerWidth;
-  const vpH = window.innerHeight;
+  const [vpSize, setVpSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const onResize = () => setVpSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const vpW = vpSize.w;
+  const vpH = vpSize.h;
 
   const isOpen = animState === "open";
   const isLeaving = animState === "leaving";
@@ -352,6 +358,7 @@ export function ArtworkLightbox({
     return (
       <div
         ref={overlayRef}
+        data-tauri-drag-region
         onClick={handleOverlayClick}
         className="fixed inset-0 z-[100]"
         style={{
@@ -362,10 +369,11 @@ export function ArtworkLightbox({
       >
         {/* Visualizer canvas background */}
         {visualizerActive && isOpen && (
-          <div className="absolute inset-0 z-0">
+          <div data-tauri-drag-region className="absolute inset-0 z-0">
             <Visualizer modes={[...activeModes]} color={artColor} />
             <div
-              className="absolute inset-0 pointer-events-none"
+              data-tauri-drag-region
+              className="absolute inset-0"
               style={{
                 background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%)",
               }}
@@ -381,11 +389,14 @@ export function ArtworkLightbox({
             src={currentSrc}
             alt="Artwork"
             onClick={handleImageClick}
+            data-tauri-drag-region
+            draggable={false}
             className={`fixed rounded-lg shadow-2xl object-cover ${artworks.length > 1 ? "cursor-pointer" : ""}`}
             style={containerStyle}
           />
         ) : (
           <div
+            data-tauri-drag-region
             className="fixed rounded-lg shadow-2xl bg-neutral-800 flex items-center justify-center"
             style={containerStyle}
           >
@@ -407,7 +418,8 @@ export function ArtworkLightbox({
         {/* Track info below artwork */}
         {hasInfo && isOpen && (
           <div
-            className="fixed text-center transition-opacity duration-300"
+            data-tauri-drag-region
+          className="fixed text-center transition-opacity duration-300"
             style={{
               left: artLeft,
               top: artTop + artSize + 16,
@@ -417,17 +429,17 @@ export function ArtworkLightbox({
             }}
           >
             {trackInfo.title && (
-              <p className="text-white text-lg font-semibold truncate">
+              <p data-tauri-drag-region className="text-white text-lg font-semibold truncate">
                 {trackInfo.title}
               </p>
             )}
             {trackInfo.artist && (
-              <p className="text-white/60 text-sm truncate mt-0.5">
+              <p data-tauri-drag-region className="text-white/60 text-sm truncate mt-0.5">
                 {trackInfo.artist}
               </p>
             )}
             {trackInfo.album && (
-              <p className="text-white/40 text-sm truncate mt-0.5">
+              <p data-tauri-drag-region className="text-white/40 text-sm truncate mt-0.5">
                 {trackInfo.album}{trackInfo.year ? ` (${trackInfo.year})` : ""}
               </p>
             )}
@@ -466,13 +478,14 @@ export function ArtworkLightbox({
           <img
             src="/icon-white.png"
             alt=""
-            className="fixed bottom-4 right-4 h-16 w-auto opacity-20 pointer-events-none z-10"
+            className="fixed bottom-4 right-4 h-6 w-auto opacity-20 pointer-events-none z-10"
           />
         )}
 
         {/* Right: lyrics panel */}
         {hasLyrics && isOpen && (
           <div
+            data-tauri-drag-region
             className="fixed transition-opacity duration-500"
             style={{
               left: leftPanelWidth,
@@ -525,6 +538,7 @@ export function ArtworkLightbox({
   return (
     <div
       ref={overlayRef}
+      data-tauri-drag-region
       onClick={handleOverlayClick}
       className="fixed inset-0 z-[100]"
       style={{
@@ -535,10 +549,11 @@ export function ArtworkLightbox({
     >
       {/* Visualizer canvas background */}
       {visualizerActive && isOpen && (
-        <div className="absolute inset-0 z-0">
+        <div data-tauri-drag-region className="absolute inset-0 z-0">
           <Visualizer modes={[...activeModes]} color={artColor} />
           <div
-            className="absolute inset-0 pointer-events-none"
+            data-tauri-drag-region
+            className="absolute inset-0"
             style={{
               background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%)",
             }}
@@ -553,6 +568,8 @@ export function ArtworkLightbox({
           src={currentSrc}
           alt="Artwork"
           onClick={handleImageClick}
+          data-tauri-drag-region
+          draggable={false}
           className={`fixed rounded-lg shadow-2xl object-cover ${artworks.length > 1 ? "cursor-pointer" : ""}`}
           style={containerStyle}
         />
@@ -579,6 +596,7 @@ export function ArtworkLightbox({
       {/* Track info below artwork */}
       {hasInfo && isOpen && (
         <div
+          data-tauri-drag-region
           className="fixed text-center transition-opacity duration-300"
           style={{
             left: artLeft,
@@ -589,17 +607,17 @@ export function ArtworkLightbox({
           }}
         >
           {trackInfo.title && (
-            <p className="text-white text-lg font-semibold truncate">
+            <p data-tauri-drag-region className="text-white text-lg font-semibold truncate">
               {trackInfo.title}
             </p>
           )}
           {trackInfo.artist && (
-            <p className="text-white/60 text-sm truncate mt-0.5">
+            <p data-tauri-drag-region className="text-white/60 text-sm truncate mt-0.5">
               {trackInfo.artist}
             </p>
           )}
           {trackInfo.album && (
-            <p className="text-white/40 text-sm truncate mt-0.5">
+            <p data-tauri-drag-region className="text-white/40 text-sm truncate mt-0.5">
               {trackInfo.album}{trackInfo.year ? ` (${trackInfo.year})` : ""}
             </p>
           )}
@@ -611,7 +629,7 @@ export function ArtworkLightbox({
         <img
           src="/icon-white.png"
           alt=""
-          className="fixed bottom-4 right-4 h-16 w-auto opacity-20 pointer-events-none z-10"
+          className="fixed bottom-4 right-4 h-6 w-auto opacity-20 pointer-events-none z-10"
         />
       )}
 

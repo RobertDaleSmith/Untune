@@ -87,7 +87,7 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
 
   if (state.status === "loading") {
     return (
-      <div className="flex items-center justify-center h-full text-white/30 text-sm">
+      <div data-tauri-drag-region className="flex items-center justify-center h-full text-white/30 text-sm">
         Loading lyrics...
       </div>
     );
@@ -95,9 +95,9 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
 
   if (state.status === "instrumental") {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="text-white/40 text-lg">Instrumental</p>
+      <div data-tauri-drag-region className="flex items-center justify-center h-full">
+        <div data-tauri-drag-region className="text-center">
+          <p data-tauri-drag-region className="text-white/40 text-lg">Instrumental</p>
         </div>
       </div>
     );
@@ -111,9 +111,10 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
     return (
       <div
         ref={containerRef}
+        data-tauri-drag-region
         className="h-full overflow-y-auto px-6 py-8 scrollbar-hide"
       >
-        <div className="whitespace-pre-wrap text-white/50 text-lg leading-relaxed">
+        <div data-tauri-drag-region className="whitespace-pre-wrap text-white/50 text-lg leading-relaxed">
           {state.text}
         </div>
       </div>
@@ -126,16 +127,18 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
   return (
     <div
       ref={containerRef}
+      data-tauri-drag-region
       className="h-full overflow-y-auto px-6 scrollbar-hide"
     >
       {/* Top spacer so first line can center */}
-      <div style={{ height: "50%" }} />
+      <div data-tauri-drag-region style={{ height: "50%" }} />
       {lines.map((line, i) => {
         const isCurrent = i === currentLine;
         return (
           <p
             key={i}
             ref={setLineRef(i)}
+            data-tauri-drag-region
             className={`py-1.5 transition-all duration-300 ${
               isCurrent
                 ? "text-white text-2xl font-semibold opacity-100"
@@ -147,7 +150,7 @@ export function SyncedLyrics({ trackName, artistName, albumName, duration }: Syn
         );
       })}
       {/* Bottom spacer so last line can center */}
-      <div style={{ height: "50%" }} />
+      <div data-tauri-drag-region style={{ height: "50%" }} />
     </div>
   );
 }
