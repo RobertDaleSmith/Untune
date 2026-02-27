@@ -30,6 +30,7 @@ fn lookup_and_play(
     track_id: i64,
     db: &Database,
     playback: &PlaybackState,
+    crossfade: bool,
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     let info = db::get_track_file_info(&conn, track_id)
@@ -37,7 +38,7 @@ fn lookup_and_play(
     drop(conn);
     match info {
         Some((path, duration)) => {
-            if playback.crossfade_duration() > 0.0 && playback.is_playing() {
+            if crossfade && playback.crossfade_duration() > 0.0 && playback.is_playing() {
                 playback.play_with_crossfade(&path, track_id, duration)
             } else {
                 playback.play(&path, track_id, duration)
@@ -53,7 +54,7 @@ pub fn play_track(
     db: State<'_, Database>,
     playback: State<'_, PlaybackState>,
 ) -> Result<(), String> {
-    lookup_and_play(track_id, &db, &playback)
+    lookup_and_play(track_id, &db, &playback, false)
 }
 
 #[tauri::command]
@@ -69,7 +70,7 @@ pub fn play_queue(
     let idx = start_index.min(track_ids.len() - 1);
     let track_id = track_ids[idx];
 
-    lookup_and_play(track_id, &db, &playback)?;
+    lookup_and_play(track_id, &db, &playback, false)?;
     playback.set_queue(track_ids, idx)
 }
 
@@ -112,7 +113,7 @@ pub fn next_track(
     loop {
         match playback.advance_next() {
             Some((track_id, _idx)) => {
-                match lookup_and_play(track_id, &db, &playback) {
+                match lookup_and_play(track_id, &db, &playback, false) {
                     Ok(()) => return Ok(Some(track_id)),
                     Err(_) => continue,
                 }
@@ -138,7 +139,7 @@ pub fn previous_track(
     loop {
         match playback.advance_prev() {
             Some((track_id, _idx)) => {
-                match lookup_and_play(track_id, &db, &playback) {
+                match lookup_and_play(track_id, &db, &playback, false) {
                     Ok(()) => return Ok(Some(track_id)),
                     Err(_) => continue,
                 }
@@ -210,7 +211,7 @@ pub fn jump_to_queue_index(
     playback: State<'_, PlaybackState>,
 ) -> Result<i64, String> {
     let track_id = playback.jump_to_queue_index(index)?;
-    lookup_and_play(track_id, &db, &playback)?;
+    lookup_and_play(track_id, &db, &playback, false)?;
     Ok(track_id)
 }
 
@@ -241,7 +242,7 @@ pub fn get_playback_info(
 
     // Auto-crossfade: start next track early when near end of current
     let crossfade_into = if let Some(next_id) = playback.should_crossfade_next() {
-        match lookup_and_play(next_id, &db, &playback) {
+        match lookup_and_play(next_id, &db, &playback, true) {
             Ok(()) => Some(next_id),
             Err(_) => None,
         }

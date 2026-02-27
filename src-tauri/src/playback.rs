@@ -197,6 +197,18 @@ impl PlaybackState {
     }
 
     pub fn play(&self, path: &str, track_id: i64, duration: Option<f64>) -> Result<(), String> {
+        // Cancel any in-progress crossfade and stop old sink immediately
+        if let Some(flag) = self.crossfade_cancel.lock().unwrap().take() {
+            flag.store(true, Ordering::Relaxed);
+        }
+        {
+            let mut old_sink = self.crossfade_old_sink.lock().unwrap();
+            if let Some(ref s) = *old_sink {
+                s.sink.stop();
+            }
+            *old_sink = None;
+        }
+
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
 
         let volume = guard.as_ref().map(|i| i.volume).unwrap_or(1.0);
