@@ -444,6 +444,36 @@ pub fn reorder_playlists(
     Ok(())
 }
 
+pub fn get_recently_added(conn: &Connection, limit: i64) -> Result<Vec<Track>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {} FROM tracks ORDER BY date_added DESC LIMIT ?",
+        TRACK_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![limit], |row| map_track_row(row))?;
+    rows.collect()
+}
+
+pub fn get_recently_played(conn: &Connection, limit: i64) -> Result<Vec<Track>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {} FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT ?",
+        TRACK_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![limit], |row| map_track_row(row))?;
+    rows.collect()
+}
+
+pub fn get_top_played(conn: &Connection, limit: i64) -> Result<Vec<Track>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?",
+        TRACK_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![limit], |row| map_track_row(row))?;
+    rows.collect()
+}
+
 pub fn update_track_rating(
     conn: &Connection,
     track_id: i64,

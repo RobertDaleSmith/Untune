@@ -9,7 +9,8 @@ export type View =
   | "playlist"
   | "album-detail"
   | "artist-detail"
-  | "genre-detail";
+  | "genre-detail"
+  | "smart-view";
 
 interface NavigationState {
   view: View;
@@ -19,6 +20,8 @@ interface NavigationState {
   albumArtist: string | null;
   artistName: string | null;
   genreName: string | null;
+  smartViewId: string | null;
+  smartViewName: string | null;
   sidebarRefresh: number;
   detailVersion: number;
   scrollPositions: Record<string, number>;
@@ -28,6 +31,7 @@ interface NavigationState {
   navigateToAlbum: (album: string, artist: string | null) => void;
   navigateToArtist: (name: string) => void;
   navigateToGenre: (name: string) => void;
+  navigateToSmartView: (id: string, name: string) => void;
   requestSidebarRefresh: () => void;
   requestDetailRefresh: () => void;
   saveScrollPosition: (view: string, position: number) => void;
@@ -35,11 +39,11 @@ interface NavigationState {
   init: () => Promise<void>;
 }
 
-const VALID_VIEWS: View[] = ["songs", "albums", "artists", "genres", "playlist", "album-detail", "artist-detail", "genre-detail"];
+const VALID_VIEWS: View[] = ["songs", "albums", "artists", "genres", "playlist", "album-detail", "artist-detail", "genre-detail", "smart-view"];
 
 function saveNavigation(get: () => NavigationState) {
-  const { view, playlistId, playlistName, albumKey, albumArtist, artistName, genreName } = get();
-  const data = JSON.stringify({ view, playlistId, playlistName, albumKey, albumArtist, artistName, genreName });
+  const { view, playlistId, playlistName, albumKey, albumArtist, artistName, genreName, smartViewId, smartViewName } = get();
+  const data = JSON.stringify({ view, playlistId, playlistName, albumKey, albumArtist, artistName, genreName, smartViewId, smartViewName });
   setPreference("session.navigation", data).catch(() => {});
 }
 
@@ -51,6 +55,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   albumArtist: null,
   artistName: null,
   genreName: null,
+  smartViewId: null,
+  smartViewName: null,
   sidebarRefresh: 0,
   detailVersion: 0,
   scrollPositions: {},
@@ -80,6 +86,11 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     saveNavigation(get);
   },
 
+  navigateToSmartView: (id, name) => {
+    set({ view: "smart-view", smartViewId: id, smartViewName: name });
+    saveNavigation(get);
+  },
+
   requestSidebarRefresh: () =>
     set((s) => ({ sidebarRefresh: s.sidebarRefresh + 1 })),
 
@@ -105,6 +116,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         albumArtist: data.albumArtist ?? null,
         artistName: data.artistName ?? null,
         genreName: data.genreName ?? null,
+        smartViewId: data.smartViewId ?? null,
+        smartViewName: data.smartViewName ?? null,
       });
     } catch {
       // Ignore corrupt preferences

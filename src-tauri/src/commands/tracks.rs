@@ -44,6 +44,20 @@ pub fn search_tracks(
 }
 
 #[tauri::command]
+pub fn get_smart_view_tracks(
+    db: State<'_, Database>,
+    view_name: String,
+) -> Result<Vec<Track>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    match view_name.as_str() {
+        "recently-added" => db::get_recently_added(&conn, 200).map_err(|e| e.to_string()),
+        "recently-played" => db::get_recently_played(&conn, 200).map_err(|e| e.to_string()),
+        "top-played" => db::get_top_played(&conn, 200).map_err(|e| e.to_string()),
+        _ => Err(format!("Unknown smart view: {}", view_name)),
+    }
+}
+
+#[tauri::command]
 pub fn set_track_rating(
     db: State<'_, Database>,
     track_id: i64,

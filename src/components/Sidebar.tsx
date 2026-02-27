@@ -32,6 +32,7 @@ const libraryIcons: Record<View, React.ReactNode> = {
   "album-detail": null,
   "artist-detail": null,
   "genre-detail": null,
+  "smart-view": null,
 };
 
 const libraryItems: { label: string; view: View }[] = [
@@ -90,7 +91,7 @@ function SmartIcon({ native }: { native: boolean }) {
 }
 
 export function Sidebar() {
-  const { view, playlistId, navigateTo, navigateToPlaylist } =
+  const { view, playlistId, smartViewId, navigateTo, navigateToPlaylist, navigateToSmartView } =
     useNavigationStore();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(loadExpandedState);
@@ -609,6 +610,39 @@ export function Sidebar() {
           </button>
         ))}
       </nav>
+
+      <div className="px-1 pt-2">
+        {[
+          { id: "recently-added", label: "Recently Added", icon: (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+          )},
+          { id: "recently-played", label: "Recently Played", icon: (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+              <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
+          )},
+          { id: "top-played", label: "Top Played", icon: (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 opacity-60">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          )},
+        ].map((sv) => (
+          <button
+            key={sv.id}
+            onClick={() => navigateToSmartView(sv.id, sv.label)}
+            className={`w-full text-left px-2 py-1 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+              view === "smart-view" && smartViewId === sv.id
+                ? "bg-accent/20 text-n-100"
+                : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
+            }`}
+          >
+            {sv.icon}
+            {sv.label}
+          </button>
+        ))}
+      </div>
 
       <div className="px-3 pt-4 pb-1 flex items-center justify-between">
         <h2 className="text-[11px] font-semibold text-n-500 uppercase tracking-wider">

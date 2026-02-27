@@ -119,6 +119,10 @@ export async function setTrackRating(trackId: number, rating: number | null): Pr
   return invoke("set_track_rating", { trackId, rating });
 }
 
+export async function getSmartViewTracks(viewName: string): Promise<Track[]> {
+  return invoke<Track[]>("get_smart_view_tracks", { viewName });
+}
+
 export async function getAlbums(): Promise<AlbumSummary[]> {
   return invoke<AlbumSummary[]>("get_albums");
 }

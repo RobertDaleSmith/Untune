@@ -7,6 +7,7 @@ import { AlbumsView } from "./AlbumsView";
 import { ArtistsView } from "./ArtistsView";
 import { GenresView } from "./GenresView";
 import { DetailView } from "./DetailView";
+import { SmartViewDetail } from "./SmartViewDetail";
 import { ColumnBrowser } from "./ColumnBrowser";
 import type { Track } from "../lib/types";
 
@@ -44,7 +45,7 @@ function applyColumnFilter(
 }
 
 export function ContentRouter() {
-  const { view, playlistId, playlistName, albumKey, albumArtist, artistName, genreName } =
+  const { view, playlistId, playlistName, albumKey, albumArtist, artistName, genreName, smartViewId, smartViewName } =
     useNavigationStore();
   const { tracks, searchResults } = useLibraryStore();
   const browserVisible = useColumnBrowserStore((s) => s.visible);
@@ -122,6 +123,14 @@ export function ContentRouter() {
           kind="genre"
           title={genreName ?? ""}
           genreName={genreName!}
+        />
+      );
+    case "smart-view":
+      return (
+        <SmartViewDetail
+          key={`smart-${smartViewId}`}
+          viewId={smartViewId ?? ""}
+          viewName={smartViewName ?? ""}
         />
       );
     default:
