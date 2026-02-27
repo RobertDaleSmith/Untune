@@ -21,6 +21,9 @@ import {
   getAudioRoute,
   getAudioDevices,
   setAudioDevice,
+  setSleepTimer as setSleepTimerCmd,
+  cancelSleepTimer as cancelSleepTimerCmd,
+  getSleepTimerRemaining,
 } from "../lib/commands";
 import type { AudioRoute, AudioDevice } from "../lib/commands";
 
@@ -42,6 +45,7 @@ interface PlaybackState {
   _restoredFromSession: boolean;
   audioRoute: AudioRoute | null;
   audioDevices: AudioDevice[];
+  sleepTimerRemaining: number | null;
 
   showError: (msg: string) => void;
   requestScrollToNowPlaying: () => void;
@@ -60,6 +64,8 @@ interface PlaybackState {
   poll: () => Promise<void>;
   refreshDevices: () => Promise<void>;
   switchDevice: (deviceId: number) => Promise<void>;
+  setSleepTimer: (minutes: number) => Promise<void>;
+  cancelSleepTimer: () => Promise<void>;
   init: () => Promise<void>;
 }
 
@@ -81,6 +87,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   _restoredFromSession: false,
   audioRoute: null,
   audioDevices: [],
+  sleepTimerRemaining: null,
 
   showError: (msg: string) => {
     const prev = get()._errorTimer;
@@ -243,6 +250,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         shuffle: info.shuffle,
         repeatMode: info.repeatMode,
       });
+      // Poll sleep timer
+      getSleepTimerRemaining()
+        .then((remaining) => set({ sleepTimerRemaining: remaining }))
+        .catch(() => {});
       // Track ended naturally: was playing, now stopped (not paused) but track still set
       if (prev.isPlaying && !info.isPlaying && !info.isPaused && info.trackId != null) {
         const trackId = await nextTrack();
@@ -310,6 +321,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "Failed to switch device";
       get().showError(msg);
     }
+  },
+
+  setSleepTimer: async (minutes: number) => {
+    await setSleepTimerCmd(minutes);
+    set({ sleepTimerRemaining: minutes * 60 });
+  },
+
+  cancelSleepTimer: async () => {
+    await cancelSleepTimerCmd();
+    set({ sleepTimerRemaining: null });
   },
 
   init: async () => {

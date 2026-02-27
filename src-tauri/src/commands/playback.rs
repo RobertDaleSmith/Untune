@@ -351,6 +351,28 @@ pub fn clear_now_playing(
 }
 
 #[tauri::command]
+pub fn set_sleep_timer(
+    minutes: u32,
+    playback: State<'_, PlaybackState>,
+) -> Result<(), String> {
+    playback.set_sleep_timer(minutes)
+}
+
+#[tauri::command]
+pub fn cancel_sleep_timer(
+    playback: State<'_, PlaybackState>,
+) -> Result<(), String> {
+    playback.cancel_sleep_timer()
+}
+
+#[tauri::command]
+pub fn get_sleep_timer_remaining(
+    playback: State<'_, PlaybackState>,
+) -> Option<f64> {
+    playback.sleep_timer_remaining()
+}
+
+#[tauri::command]
 pub fn get_frequency_data(playback: State<'_, PlaybackState>) -> FrequencyData {
     match playback.frequency_data() {
         Some(shared) => {

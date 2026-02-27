@@ -1,5 +1,6 @@
 use rodio::{OutputStream, OutputStreamHandle, Sink};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::analyzer::{self, SharedFrequencyData};
@@ -35,14 +36,76 @@ pub struct PlaybackInner {
 unsafe impl Send for PlaybackInner {}
 unsafe impl Sync for PlaybackInner {}
 
+/// Holds raw pointers to PlaybackState's Mutex fields for the sleep timer thread.
+/// SAFETY: PlaybackState is Tauri managed state and lives for the entire app lifetime.
+/// All fields are accessed only via Mutex locks, so access is serialized.
+struct SleepThreadState {
+    inner: *const Mutex<Option<PlaybackInner>>,
+    sleep_end_time: *const Mutex<Option<Instant>>,
+    sleep_cancel: *const Mutex<Option<Arc<AtomicBool>>>,
+    pre_sleep_volume: *const Mutex<Option<f32>>,
+}
+
+unsafe impl Send for SleepThreadState {}
+unsafe impl Sync for SleepThreadState {}
+
+impl SleepThreadState {
+    fn is_playing(&self) -> bool {
+        unsafe {
+            let guard = (*self.inner).lock().unwrap_or_else(|e| e.into_inner());
+            match guard.as_ref() {
+                Some(inner) => !inner.sink.is_paused() && !inner.sink.empty(),
+                None => false,
+            }
+        }
+    }
+
+    fn volume(&self) -> f32 {
+        unsafe {
+            let guard = (*self.inner).lock().unwrap_or_else(|e| e.into_inner());
+            guard.as_ref().map(|i| i.volume).unwrap_or(1.0)
+        }
+    }
+
+    fn set_volume(&self, vol: f32) {
+        unsafe {
+            let mut guard = (*self.inner).lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(inner) = guard.as_mut() {
+                let v = vol.clamp(0.0, 1.0);
+                inner.volume = v;
+                inner.sink.set_volume(v);
+            }
+        }
+    }
+
+    fn stop(&self) {
+        unsafe {
+            let mut guard = (*self.inner).lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(inner) = guard.as_mut() {
+                inner.sink.stop();
+                inner.current_track_id = None;
+                inner.play_started_at = None;
+                inner.accumulated_position = 0.0;
+                inner.duration = None;
+            }
+        }
+    }
+}
+
 pub struct PlaybackState {
     pub inner: Mutex<Option<PlaybackInner>>,
+    sleep_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    sleep_end_time: Mutex<Option<Instant>>,
+    pre_sleep_volume: Mutex<Option<f32>>,
 }
 
 impl PlaybackState {
     pub fn new() -> Self {
         PlaybackState {
             inner: Mutex::new(None),
+            sleep_cancel: Mutex::new(None),
+            sleep_end_time: Mutex::new(None),
+            pre_sleep_volume: Mutex::new(None),
         }
     }
 
@@ -395,6 +458,124 @@ impl PlaybackState {
     pub fn frequency_data(&self) -> Option<SharedFrequencyData> {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().map(|i| i.frequency_data.clone())
+    }
+
+    pub fn set_sleep_timer(&self, minutes: u32) -> Result<(), String> {
+        // Cancel any existing timer
+        self.cancel_sleep_timer_inner();
+
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancel_clone = cancel_flag.clone();
+
+        let end_time = Instant::now() + std::time::Duration::from_secs(minutes as u64 * 60);
+        *self.sleep_end_time.lock().unwrap() = Some(end_time);
+        *self.sleep_cancel.lock().unwrap() = Some(cancel_flag);
+
+        // Save current volume
+        let vol = self.volume();
+        *self.pre_sleep_volume.lock().unwrap() = Some(vol);
+
+        // Clone the Mutex-wrapped state references for the sleep thread.
+        // We clone the Arc<Mutex> handles so the thread can access them safely.
+        let inner_ref = Arc::new(SleepThreadState {
+            inner: &self.inner as *const Mutex<Option<PlaybackInner>>,
+            sleep_end_time: &self.sleep_end_time as *const Mutex<Option<Instant>>,
+            sleep_cancel: &self.sleep_cancel as *const Mutex<Option<Arc<AtomicBool>>>,
+            pre_sleep_volume: &self.pre_sleep_volume as *const Mutex<Option<f32>>,
+        });
+
+        std::thread::spawn(move || {
+            let fade_duration_secs: u64 = 30;
+            let total_secs = minutes as u64 * 60;
+            let wait_secs = total_secs.saturating_sub(fade_duration_secs);
+
+            // Wait until fade should start, checking cancel every second
+            for _ in 0..wait_secs {
+                if cancel_clone.load(Ordering::Relaxed) {
+                    return;
+                }
+                if !inner_ref.is_playing() {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        if cancel_clone.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        if inner_ref.is_playing() {
+                            break;
+                        }
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+
+            // Fade out over 30 seconds
+            let start_vol = inner_ref.volume();
+            let steps = (fade_duration_secs * 2) as usize; // 500ms steps
+            for step in 0..steps {
+                if cancel_clone.load(Ordering::Relaxed) {
+                    return;
+                }
+                if !inner_ref.is_playing() {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        if cancel_clone.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        if inner_ref.is_playing() {
+                            break;
+                        }
+                    }
+                }
+                let t = (step + 1) as f32 / steps as f32;
+                let vol = start_vol * (1.0 - t);
+                inner_ref.set_volume(vol);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+
+            if !cancel_clone.load(Ordering::Relaxed) {
+                inner_ref.stop();
+                // Restore volume for next play
+                // SAFETY: PlaybackState is Tauri managed state, outlives this thread
+                unsafe {
+                    if let Some(original_vol) = *(*inner_ref.pre_sleep_volume).lock().unwrap() {
+                        inner_ref.set_volume(original_vol);
+                    }
+                    *(*inner_ref.sleep_end_time).lock().unwrap() = None;
+                    *(*inner_ref.sleep_cancel).lock().unwrap() = None;
+                    *(*inner_ref.pre_sleep_volume).lock().unwrap() = None;
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn cancel_sleep_timer_inner(&self) {
+        if let Some(flag) = self.sleep_cancel.lock().unwrap().take() {
+            flag.store(true, Ordering::Relaxed);
+        }
+        // Restore volume
+        if let Some(vol) = self.pre_sleep_volume.lock().unwrap().take() {
+            let _ = self.set_volume(vol);
+        }
+        *self.sleep_end_time.lock().unwrap() = None;
+    }
+
+    pub fn cancel_sleep_timer(&self) -> Result<(), String> {
+        self.cancel_sleep_timer_inner();
+        Ok(())
+    }
+
+    pub fn sleep_timer_remaining(&self) -> Option<f64> {
+        let guard = self.sleep_end_time.lock().unwrap();
+        guard.map(|end| {
+            let now = Instant::now();
+            if now >= end {
+                0.0
+            } else {
+                (end - now).as_secs_f64()
+            }
+        })
     }
 
     /// Reinitialize the audio output stream to pick up a new default device.

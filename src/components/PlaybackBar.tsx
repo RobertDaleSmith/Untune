@@ -66,6 +66,9 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
     audioDevices,
     refreshDevices,
     switchDevice,
+    sleepTimerRemaining,
+    setSleepTimer,
+    cancelSleepTimer,
   } = usePlaybackStore();
 
   const { navigateTo, navigateToPlaylist, navigateToAlbum, navigateToArtist, navigateToGenre } =
@@ -108,6 +111,10 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
   const devicePickerRef = useRef<HTMLDivElement>(null);
   const deviceBtnRef = useRef<HTMLButtonElement>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [showSleepMenu, setShowSleepMenu] = useState(false);
+  const sleepMenuRef = useRef<HTMLDivElement>(null);
+  const sleepBtnRef = useRef<HTMLButtonElement>(null);
+  const [sleepMenuPos, setSleepMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const currentTrack = currentTrackId
     ? tracks.find((t) => t.id === currentTrackId)
@@ -221,6 +228,18 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showDevicePicker]);
+
+  // Close sleep timer menu on click outside
+  useEffect(() => {
+    if (!showSleepMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sleepMenuRef.current && !sleepMenuRef.current.contains(e.target as Node)) {
+        setShowSleepMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSleepMenu]);
 
   const displayPosition = dragPosition ?? position;
   const progressPct = duration && duration > 0 ? (displayPosition / duration) * 100 : 0;
@@ -434,6 +453,24 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                 </button>
               </div>
               <div className="relative hidden sm:block">
+                <button
+                  ref={sleepBtnRef}
+                  onClick={() => {
+                    if (!showSleepMenu && sleepBtnRef.current) {
+                      const rect = sleepBtnRef.current.getBoundingClientRect();
+                      setSleepMenuPos({ top: rect.top, left: rect.right });
+                    }
+                    setShowSleepMenu((v) => !v);
+                  }}
+                  className={`p-1.5 transition-colors ${sleepTimerRemaining != null ? "text-accent" : "text-n-500 hover:text-n-300"}`}
+                  title={sleepTimerRemaining != null ? `Sleep in ${Math.ceil(sleepTimerRemaining / 60)}m` : "Sleep timer"}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                </button>
+              </div>
+              <div className="relative hidden sm:block">
                 <AssistantButton />
               </div>
             </div>
@@ -445,6 +482,51 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
       </div>
 
       {/* Device picker dropdown — rendered via portal to escape overflow:hidden */}
+      {/* Sleep timer dropdown — rendered via portal */}
+      {showSleepMenu && createPortal(
+        <div
+          ref={sleepMenuRef}
+          className="fixed w-44 bg-n-800 border border-n-700 rounded-lg shadow-xl overflow-hidden z-[9999]"
+          style={{ top: sleepMenuPos.top + 28, left: sleepMenuPos.left - 176 }}
+        >
+          <div className="px-3 py-2 text-[10px] text-n-500 uppercase tracking-wider font-medium border-b border-n-700">
+            Sleep Timer
+          </div>
+          <div className="py-1">
+            {[15, 30, 45, 60].map((mins) => (
+              <button
+                key={mins}
+                onClick={() => {
+                  setSleepTimer(mins);
+                  setShowSleepMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 text-[11px] text-n-300 hover:bg-n-700 transition-colors"
+              >
+                {mins} minutes
+              </button>
+            ))}
+            {sleepTimerRemaining != null && (
+              <>
+                <div className="my-1 border-t border-n-700" />
+                <div className="px-3 py-1 text-[10px] text-n-500">
+                  {Math.ceil(sleepTimerRemaining / 60)}m remaining
+                </div>
+                <button
+                  onClick={() => {
+                    cancelSleepTimer();
+                    setShowSleepMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-n-700 transition-colors"
+                >
+                  Cancel Timer
+                </button>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
       {showDevicePicker && createPortal(
         <div
           ref={devicePickerRef}

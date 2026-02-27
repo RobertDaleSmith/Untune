@@ -285,6 +285,20 @@ export async function setAudioDevice(deviceId: number): Promise<void> {
   return invoke("set_audio_device", { deviceId });
 }
 
+// --- Sleep timer ---
+
+export async function setSleepTimer(minutes: number): Promise<void> {
+  return invoke("set_sleep_timer", { minutes });
+}
+
+export async function cancelSleepTimer(): Promise<void> {
+  return invoke("cancel_sleep_timer");
+}
+
+export async function getSleepTimerRemaining(): Promise<number | null> {
+  return invoke<number | null>("get_sleep_timer_remaining");
+}
+
 // --- Frequency data (visualizer) ---
 
 export interface FrequencyData {
