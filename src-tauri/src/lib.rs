@@ -81,6 +81,7 @@ pub fn run() {
     }));
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let db = Database::init(app.handle())?;
 
@@ -557,6 +558,8 @@ pub fn run() {
             commands::playlists::create_playlist_folder,
             commands::playlists::reorder_playlists,
             commands::playlists::add_tracks_to_playlist,
+            commands::playlists::export_playlist_m3u,
+            commands::playlists::import_playlist_m3u,
             commands::airplay::get_audio_route,
             commands::airplay::get_audio_devices,
             commands::airplay::set_audio_device,

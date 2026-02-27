@@ -264,6 +264,14 @@ export async function addTracksToPlaylist(playlistId: number, trackIds: number[]
   return invoke("add_tracks_to_playlist", { playlistId, trackIds });
 }
 
+export async function exportPlaylistM3u(playlistId: number, outputPath: string): Promise<void> {
+  return invoke("export_playlist_m3u", { playlistId, outputPath });
+}
+
+export async function importPlaylistM3u(filePath: string): Promise<number> {
+  return invoke<number>("import_playlist_m3u", { filePath });
+}
+
 // --- Artwork search ---
 
 export interface ArtworkSearchResult {

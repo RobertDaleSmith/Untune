@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationStore, type View } from "../stores/navigationStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getPlaylists, getPlaylistTracks, deletePlaylist, renamePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder, addTracksToPlaylist } from "../lib/commands";
+import { getPlaylists, getPlaylistTracks, deletePlaylist, renamePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder, addTracksToPlaylist, exportPlaylistM3u, importPlaylistM3u } from "../lib/commands";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import { ArtworkLightbox } from "./ArtworkLightbox";
 import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import type { Playlist } from "../lib/types";
@@ -727,6 +728,27 @@ export function Sidebar() {
               >
                 Folder
               </button>
+              <div className="border-t border-n-700 my-0.5" />
+              <button
+                onClick={async () => {
+                  setNewMenuOpen(false);
+                  const filePath = await open({
+                    filters: [{ name: "M3U Playlist", extensions: ["m3u", "m3u8"] }],
+                    multiple: false,
+                  });
+                  if (filePath) {
+                    try {
+                      await importPlaylistM3u(filePath);
+                      refreshPlaylists();
+                    } catch (err) {
+                      console.error("Failed to import M3U:", err);
+                    }
+                  }
+                }}
+                className="w-full text-left px-3 py-1.5 text-[11px] text-n-300 hover:bg-n-700 transition-colors"
+              >
+                Import M3U...
+              </button>
             </div>
           )}
         </div>
@@ -795,6 +817,24 @@ export function Sidebar() {
               className="w-full text-left px-3 py-1.5 text-xs text-n-200 hover:bg-n-700 transition-colors"
             >
               Edit Rules...
+            </button>
+          )}
+          {!contextMenu.playlist.isFolder && (
+            <button
+              onClick={async () => {
+                const pl = contextMenu.playlist;
+                setContextMenu(null);
+                const filePath = await save({
+                  defaultPath: `${pl.name}.m3u`,
+                  filters: [{ name: "M3U Playlist", extensions: ["m3u"] }],
+                });
+                if (filePath) {
+                  await exportPlaylistM3u(pl.id, filePath).catch(console.error);
+                }
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs text-n-200 hover:bg-n-700 transition-colors"
+            >
+              Export as M3U...
             </button>
           )}
           <button
