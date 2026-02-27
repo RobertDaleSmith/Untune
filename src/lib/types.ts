@@ -91,6 +91,7 @@ export interface PlaybackInfo {
   shuffle: boolean;
   repeatMode: string;
   transitionedTo: number | null;
+  crossfadeInto: number | null;
   playRecordedTrackId: number | null;
 }
 

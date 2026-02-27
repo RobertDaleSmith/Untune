@@ -22,6 +22,7 @@ pub struct PlaybackInfo {
     pub shuffle: bool,
     pub repeat_mode: String,
     pub transitioned_to: Option<i64>,
+    pub crossfade_into: Option<i64>,
     pub play_recorded_track_id: Option<i64>,
 }
 
@@ -238,6 +239,16 @@ pub fn get_playback_info(
         }
     }
 
+    // Auto-crossfade: start next track early when near end of current
+    let crossfade_into = if let Some(next_id) = playback.should_crossfade_next() {
+        match lookup_and_play(next_id, &db, &playback) {
+            Ok(()) => Some(next_id),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
     let repeat_str = match playback.repeat_mode() {
         RepeatMode::Off => "off",
         RepeatMode::All => "all",
@@ -253,6 +264,7 @@ pub fn get_playback_info(
         shuffle: playback.shuffle(),
         repeat_mode: repeat_str.to_string(),
         transitioned_to,
+        crossfade_into,
         play_recorded_track_id,
     }
 }

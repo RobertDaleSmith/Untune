@@ -29,6 +29,7 @@ pub struct PlaybackInner {
     shuffle_next: Option<usize>,
     frequency_data: SharedFrequencyData,
     play_recorded: bool,
+    crossfade_triggered: bool,
     next_track_appended: bool,
     appended_track_id: Option<i64>,
     appended_track_duration: Option<f64>,
@@ -187,6 +188,7 @@ impl PlaybackState {
             shuffle_next: None,
             frequency_data: analyzer::new_shared_frequency_data(),
             play_recorded: false,
+            crossfade_triggered: false,
             next_track_appended: false,
             appended_track_id: None,
             appended_track_duration: None,
@@ -222,6 +224,7 @@ impl PlaybackState {
         inner.play_started_at = Some(Instant::now());
         inner.accumulated_position = 0.0;
         inner.play_recorded = false;
+        inner.crossfade_triggered = false;
         inner.next_track_appended = false;
         inner.appended_track_id = None;
         inner.appended_track_duration = None;
@@ -647,6 +650,7 @@ impl PlaybackState {
             inner.play_started_at = Some(Instant::now());
             inner.accumulated_position = 0.0;
             inner.play_recorded = false;
+            inner.crossfade_triggered = false;
 
             if let Some(idx) = new_queue_index {
                 if inner.shuffle {
@@ -666,6 +670,71 @@ impl PlaybackState {
     pub fn has_next_appended(&self) -> bool {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().map(|i| i.next_track_appended).unwrap_or(false)
+    }
+
+    /// Check if we should auto-start crossfade into the next track.
+    /// Returns Some(next_track_id) if position is within crossfade_duration of the end
+    /// and crossfade hasn't already been triggered for this track.
+    pub fn should_crossfade_next(&self) -> Option<i64> {
+        let cf_dur = *self.crossfade_duration.lock().unwrap();
+        if cf_dur <= 0.0 {
+            return None;
+        }
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = guard.as_mut()?;
+        if inner.crossfade_triggered || !inner.current_track_id.is_some() {
+            return None;
+        }
+        let dur = inner.duration?;
+        if dur <= cf_dur as f64 {
+            // Track is shorter than crossfade duration, skip auto-crossfade
+            return None;
+        }
+        let pos = inner.accumulated_position
+            + inner.play_started_at.map(|s| s.elapsed().as_secs_f64()).unwrap_or(0.0);
+        if pos >= dur - cf_dur as f64 {
+            inner.crossfade_triggered = true;
+            // Advance queue to get the next track
+            if inner.queue.is_empty() {
+                return None;
+            }
+            if inner.repeat_mode == RepeatMode::One {
+                // Repeat One doesn't crossfade — let it loop via gapless or natural end
+                return None;
+            }
+            let next_idx = if inner.shuffle {
+                if let Some(fwd_idx) = inner.shuffle_forward.pop() {
+                    inner.shuffle_history.push(inner.queue_index);
+                    inner.queue_index = fwd_idx;
+                    if inner.shuffle_next.is_none() {
+                        inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), fwd_idx));
+                    }
+                    fwd_idx
+                } else {
+                    let rand_idx = inner.shuffle_next.take()
+                        .unwrap_or_else(|| Self::pick_random(inner.queue.len(), inner.queue_index));
+                    inner.shuffle_history.push(inner.queue_index);
+                    inner.shuffle_forward.clear();
+                    inner.queue_index = rand_idx;
+                    inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), rand_idx));
+                    rand_idx
+                }
+            } else {
+                let next = inner.queue_index + 1;
+                if next < inner.queue.len() {
+                    inner.queue_index = next;
+                    next
+                } else if inner.repeat_mode == RepeatMode::All {
+                    inner.queue_index = 0;
+                    0
+                } else {
+                    return None;
+                }
+            };
+            Some(inner.queue[next_idx])
+        } else {
+            None
+        }
     }
 
     pub fn crossfade_duration(&self) -> f32 {

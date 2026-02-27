@@ -268,6 +268,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         setPreference("session.position", "0").catch(() => {});
         return;
       }
+      // Handle crossfade transition — next track already started playing
+      if (info.crossfadeInto != null) {
+        set({ currentTrackId: info.crossfadeInto, position: 0, isPlaying: true });
+        setPreference("session.trackId", String(info.crossfadeInto)).catch(() => {});
+        setPreference("session.position", "0").catch(() => {});
+        return;
+      }
       // Update in-memory track when play is recorded (crossed 50%/240s threshold)
       if (info.playRecordedTrackId != null) {
         useLibraryStore.getState().recordTrackPlayed(info.playRecordedTrackId);
