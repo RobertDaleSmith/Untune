@@ -192,6 +192,10 @@ pub fn run() {
                     &SubmenuBuilder::new(handle, "Waves")
                         .about(None)
                         .separator()
+                        .item(&MenuItemBuilder::with_id("settings", "Settings...")
+                            .accelerator("CmdOrCtrl+,")
+                            .build(handle)?)
+                        .separator()
                         .services()
                         .separator()
                         .hide()
@@ -407,6 +411,7 @@ pub fn run() {
                 "reimport" => {
                     let _ = app.emit("menu-reimport", ());
                 }
+                "settings" => { let _ = app.emit("menu-settings", ()); }
                 "new-playlist" => { let _ = app.emit("menu-new-playlist", ()); }
                 "new-playlist-from-selection" => { let _ = app.emit("menu-new-playlist-from-selection", ()); }
                 "new-smart-playlist" => { let _ = app.emit("menu-new-smart-playlist", ()); }

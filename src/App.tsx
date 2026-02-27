@@ -18,6 +18,7 @@ import { useDragRegion } from "./hooks/useDragRegion";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
 import { QueuePanel } from "./components/QueuePanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
 
 function App() {
@@ -44,6 +45,7 @@ function App() {
   const showAlbumAccent = useThemeStore((s) => s.showAlbumAccent);
   const isMiniPlayer = useThemeStore((s) => s.isMiniPlayer);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const setTracksLoading = useLibraryStore((s) => s.setTracksLoading);
 
@@ -116,6 +118,7 @@ function App() {
   useEffect(() => {
     const unlisteners = [
       listen("menu-reimport", () => handleImportRef.current()),
+      listen("menu-settings", () => setShowSettings(true)),
       listen<string>("theme-change", (event) => {
         const t = event.payload as "light" | "dark" | "system";
         useThemeStore.getState().setTheme(t);
@@ -286,6 +289,9 @@ function App() {
       } else if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         setShowShortcuts((v) => !v);
+      } else if (e.key === "," && e.metaKey) {
+        e.preventDefault();
+        setShowSettings((v) => !v);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -604,6 +610,7 @@ function App() {
       <AssistantPanel />
       <AssistantApiKeyModal />
       {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
