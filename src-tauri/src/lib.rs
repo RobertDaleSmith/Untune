@@ -502,6 +502,7 @@ pub fn run() {
             commands::tracks::get_track_count,
             commands::tracks::search_tracks,
             commands::tracks::reveal_in_finder,
+            commands::tracks::set_track_rating,
             commands::playlists::get_playlists,
             commands::playlists::get_playlist_tracks,
             commands::playback::play_track,

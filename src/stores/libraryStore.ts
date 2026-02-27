@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Track } from "../lib/types";
+import { setTrackRating as setTrackRatingCmd } from "../lib/commands";
 
 interface LibraryState {
   tracks: Track[];
@@ -28,6 +29,7 @@ interface LibraryState {
   setTrackCount: (count: number) => void;
   setStatusBarTracks: (tracks: Track[]) => void;
   setSelectedTrackIds: (ids: number[]) => void;
+  updateTrackRating: (trackId: number, rating: number | null) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -57,4 +59,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   setTrackCount: (trackCount) => set({ trackCount }),
   setStatusBarTracks: (statusBarTracks) => set({ statusBarTracks }),
   setSelectedTrackIds: (selectedTrackIds) => set({ selectedTrackIds }),
+  updateTrackRating: (trackId, rating) => {
+    const dbRating = rating != null ? rating * 20 : null;
+    const updateTrack = (t: Track) =>
+      t.id === trackId ? { ...t, rating: dbRating } : t;
+    set((state) => ({
+      tracks: state.tracks.map(updateTrack),
+      searchResults: state.searchResults?.map(updateTrack) ?? null,
+    }));
+    setTrackRatingCmd(trackId, dbRating);
+  },
 }));

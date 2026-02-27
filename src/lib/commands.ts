@@ -115,6 +115,10 @@ export async function revealInFinder(path: string): Promise<void> {
   return invoke("reveal_in_finder", { path });
 }
 
+export async function setTrackRating(trackId: number, rating: number | null): Promise<void> {
+  return invoke("set_track_rating", { trackId, rating });
+}
+
 export async function getAlbums(): Promise<AlbumSummary[]> {
   return invoke<AlbumSummary[]>("get_albums");
 }

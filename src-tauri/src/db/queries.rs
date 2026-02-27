@@ -444,6 +444,18 @@ pub fn reorder_playlists(
     Ok(())
 }
 
+pub fn update_track_rating(
+    conn: &Connection,
+    track_id: i64,
+    rating: Option<i32>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks SET rating = ? WHERE id = ?",
+        params![rating, track_id],
+    )?;
+    Ok(())
+}
+
 pub fn get_genre_tracks(
     conn: &Connection,
     genre: &str,

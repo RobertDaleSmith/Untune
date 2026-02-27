@@ -44,6 +44,16 @@ pub fn search_tracks(
 }
 
 #[tauri::command]
+pub fn set_track_rating(
+    db: State<'_, Database>,
+    track_id: i64,
+    rating: Option<i32>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    db::update_track_rating(&conn, track_id, rating).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn reveal_in_finder(path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if !p.exists() {

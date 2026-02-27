@@ -13,6 +13,7 @@ import type { Track } from "../lib/types";
 import { formatDuration, formatDate } from "../utils/formatters";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
+import { StarRating } from "./StarRating";
 import { useNavigationStore } from "../stores/navigationStore";
 import { TrackInfoModal } from "./TrackInfoModal";
 import { ArtworkSearchModal } from "./ArtworkSearchModal";
@@ -85,11 +86,12 @@ const columns = [
     header: "Rating",
     size: 80,
     minSize: 60,
-    cell: (info) => {
-      const val = info.getValue();
-      if (!val) return "";
-      return "★".repeat(Math.round(val / 20));
-    },
+    cell: (info) => (
+      <StarRating
+        trackId={info.row.original.id}
+        rating={info.getValue()}
+      />
+    ),
   }),
 ];
 
