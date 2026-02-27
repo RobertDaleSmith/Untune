@@ -91,7 +91,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
           <div
             className="absolute inset-[-24px]"
-            style={{ filter: "blur(32px) saturate(1.8) brightness(0.35)" }}
+            style={{ filter: "var(--accent-filter)" }}
           >
             {bgBottom && (
               <img src={bgBottom} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -105,7 +105,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               />
             )}
           </div>
-          <div className="absolute inset-0" style={{ backgroundColor: "rgba(10,10,10,0.45)" }} />
+          <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
         </div>
       )}
 
