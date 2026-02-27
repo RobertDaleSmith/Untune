@@ -268,6 +268,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         setPreference("session.position", "0").catch(() => {});
         return;
       }
+      // Update in-memory track when play is recorded (crossed 50%/240s threshold)
+      if (info.playRecordedTrackId != null) {
+        useLibraryStore.getState().recordTrackPlayed(info.playRecordedTrackId);
+      }
       // Pre-buffer next track when near end (within 10s) — only if crossfade is off
       if (info.isPlaying && info.duration && info.position > info.duration - 10 && get().crossfadeDuration <= 0) {
         getUpcomingTracks(1).then(({ nextTrackIds }) => {

@@ -486,6 +486,28 @@ pub fn update_track_rating(
     Ok(())
 }
 
+pub fn record_track_played(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks SET play_count = COALESCE(play_count, 0) + 1, last_played_at = datetime('now') WHERE id = ?",
+        params![track_id],
+    )?;
+    Ok(())
+}
+
+pub fn record_track_skipped(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks SET skip_count = COALESCE(skip_count, 0) + 1, last_skipped_at = datetime('now') WHERE id = ?",
+        params![track_id],
+    )?;
+    Ok(())
+}
+
 pub fn get_genre_tracks(
     conn: &Connection,
     genre: &str,

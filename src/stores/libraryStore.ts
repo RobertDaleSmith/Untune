@@ -32,6 +32,7 @@ interface LibraryState {
   setSelectedTrackIds: (ids: number[]) => void;
   setDraggedTrackIds: (ids: number[]) => void;
   updateTrackRating: (trackId: number, rating: number | null) => void;
+  recordTrackPlayed: (trackId: number) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -72,5 +73,16 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       searchResults: state.searchResults?.map(updateTrack) ?? null,
     }));
     setTrackRatingCmd(trackId, dbRating);
+  },
+  recordTrackPlayed: (trackId) => {
+    const now = new Date().toISOString();
+    const updateTrack = (t: Track) =>
+      t.id === trackId
+        ? { ...t, playCount: (t.playCount ?? 0) + 1, lastPlayedAt: now }
+        : t;
+    set((state) => ({
+      tracks: state.tracks.map(updateTrack),
+      searchResults: state.searchResults?.map(updateTrack) ?? null,
+    }));
   },
 }));

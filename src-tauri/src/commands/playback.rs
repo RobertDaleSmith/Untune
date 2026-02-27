@@ -22,6 +22,7 @@ pub struct PlaybackInfo {
     pub shuffle: bool,
     pub repeat_mode: String,
     pub transitioned_to: Option<i64>,
+    pub play_recorded_track_id: Option<i64>,
 }
 
 fn lookup_and_play(
@@ -99,6 +100,14 @@ pub fn next_track(
     db: State<'_, Database>,
     playback: State<'_, PlaybackState>,
 ) -> Result<Option<i64>, String> {
+    // Record skip if the current track hasn't been "played" yet
+    if let Some((track_id, _pos, _dur, play_recorded)) = playback.current_play_state() {
+        if !play_recorded {
+            if let Ok(conn) = db.conn.lock() {
+                let _ = db::record_track_skipped(&conn, track_id);
+            }
+        }
+    }
     loop {
         match playback.advance_next() {
             Some((track_id, _idx)) => {
@@ -117,6 +126,14 @@ pub fn previous_track(
     db: State<'_, Database>,
     playback: State<'_, PlaybackState>,
 ) -> Result<Option<i64>, String> {
+    // Record skip if the current track hasn't been "played" yet
+    if let Some((track_id, _pos, _dur, play_recorded)) = playback.current_play_state() {
+        if !play_recorded {
+            if let Ok(conn) = db.conn.lock() {
+                let _ = db::record_track_skipped(&conn, track_id);
+            }
+        }
+    }
     loop {
         match playback.advance_prev() {
             Some((track_id, _idx)) => {
@@ -206,9 +223,20 @@ pub fn move_queue_item(
 }
 
 #[tauri::command]
-pub fn get_playback_info(playback: State<'_, PlaybackState>) -> PlaybackInfo {
+pub fn get_playback_info(
+    db: State<'_, Database>,
+    playback: State<'_, PlaybackState>,
+) -> PlaybackInfo {
     // Check for gapless transition before reading state
     let transitioned_to = playback.check_gapless_transition();
+
+    // Check if current track crossed the play threshold (50% or 240s)
+    let play_recorded_track_id = playback.check_play_threshold();
+    if let Some(track_id) = play_recorded_track_id {
+        if let Ok(conn) = db.conn.lock() {
+            let _ = db::record_track_played(&conn, track_id);
+        }
+    }
 
     let repeat_str = match playback.repeat_mode() {
         RepeatMode::Off => "off",
@@ -225,6 +253,7 @@ pub fn get_playback_info(playback: State<'_, PlaybackState>) -> PlaybackInfo {
         shuffle: playback.shuffle(),
         repeat_mode: repeat_str.to_string(),
         transitioned_to,
+        play_recorded_track_id,
     }
 }
 

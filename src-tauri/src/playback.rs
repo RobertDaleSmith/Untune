@@ -30,6 +30,7 @@ pub struct PlaybackInner {
     shuffle_forward: Vec<usize>,
     shuffle_next: Option<usize>,
     frequency_data: SharedFrequencyData,
+    play_recorded: bool,
     next_track_appended: bool,
     appended_track_id: Option<i64>,
     appended_track_duration: Option<f64>,
@@ -164,6 +165,7 @@ impl PlaybackState {
             shuffle_forward: Vec::new(),
             shuffle_next: None,
             frequency_data: analyzer::new_shared_frequency_data(),
+            play_recorded: false,
             next_track_appended: false,
             appended_track_id: None,
             appended_track_duration: None,
@@ -198,6 +200,7 @@ impl PlaybackState {
         inner.duration = duration;
         inner.play_started_at = Some(Instant::now());
         inner.accumulated_position = 0.0;
+        inner.play_recorded = false;
         inner.next_track_appended = false;
         inner.appended_track_id = None;
         inner.appended_track_duration = None;
@@ -295,6 +298,38 @@ impl PlaybackState {
     pub fn duration(&self) -> Option<f64> {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().and_then(|i| i.duration)
+    }
+
+    /// Check if we should record a play (crossed 50% or 240s threshold).
+    /// Returns Some(track_id) if a play should be recorded, and marks it as recorded.
+    pub fn check_play_threshold(&self) -> Option<i64> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = guard.as_mut()?;
+        if inner.play_recorded || inner.current_track_id.is_none() {
+            return None;
+        }
+        let pos = inner.accumulated_position
+            + inner.play_started_at.map(|s| s.elapsed().as_secs_f64()).unwrap_or(0.0);
+        let threshold = match inner.duration {
+            Some(dur) => (dur * 0.5).min(240.0),
+            None => 240.0,
+        };
+        if pos >= threshold {
+            inner.play_recorded = true;
+            inner.current_track_id
+        } else {
+            None
+        }
+    }
+
+    /// Get current track info for skip detection: (track_id, position, duration, play_recorded)
+    pub fn current_play_state(&self) -> Option<(i64, f64, Option<f64>, bool)> {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = guard.as_ref()?;
+        let track_id = inner.current_track_id?;
+        let pos = inner.accumulated_position
+            + inner.play_started_at.map(|s| s.elapsed().as_secs_f64()).unwrap_or(0.0);
+        Some((track_id, pos, inner.duration, inner.play_recorded))
     }
 
     pub fn volume(&self) -> f32 {
@@ -590,6 +625,7 @@ impl PlaybackState {
             inner.duration = new_duration;
             inner.play_started_at = Some(Instant::now());
             inner.accumulated_position = 0.0;
+            inner.play_recorded = false;
 
             if let Some(idx) = new_queue_index {
                 if inner.shuffle {

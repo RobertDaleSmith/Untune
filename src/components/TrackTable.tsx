@@ -70,6 +70,12 @@ const columns = [
     minSize: 60,
     cell: (info) => formatDate(info.getValue()),
   }),
+  columnHelper.accessor("lastPlayedAt", {
+    header: "Last Played",
+    size: 120,
+    minSize: 60,
+    cell: (info) => formatDate(info.getValue()),
+  }),
   columnHelper.accessor("genre", {
     header: "Genre",
     size: 120,
