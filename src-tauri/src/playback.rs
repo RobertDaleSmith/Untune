@@ -15,8 +15,6 @@ pub enum RepeatMode {
 
 pub struct PlaybackInner {
     sink: Sink,
-    _stream: OutputStream,
-    _stream_handle: OutputStreamHandle,
     current_track_id: Option<i64>,
     queue: Vec<i64>,
     queue_index: usize,
@@ -97,12 +95,10 @@ impl SleepThreadState {
     }
 }
 
-/// Wrapper to hold old sink + stream during crossfade.
+/// Wrapper to hold old sink during crossfade.
 /// SAFETY: Only accessed behind a Mutex, and only from the crossfade thread.
 struct CrossfadeOldSink {
     sink: Sink,
-    _stream: OutputStream,
-    _stream_handle: OutputStreamHandle,
 }
 unsafe impl Send for CrossfadeOldSink {}
 unsafe impl Sync for CrossfadeOldSink {}
@@ -119,6 +115,9 @@ unsafe impl Sync for CrossfadeThread {}
 
 pub struct PlaybackState {
     pub inner: Mutex<Option<PlaybackInner>>,
+    /// Shared audio output stream — created lazily on first play, lives for app lifetime.
+    stream: Mutex<Option<OutputStream>>,
+    stream_handle: Mutex<Option<OutputStreamHandle>>,
     sleep_cancel: Mutex<Option<Arc<AtomicBool>>>,
     sleep_end_time: Mutex<Option<Instant>>,
     pre_sleep_volume: Mutex<Option<f32>>,
@@ -128,10 +127,17 @@ pub struct PlaybackState {
     crossfade_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
 
+// SAFETY: All fields are behind Mutex locks, so access is serialized.
+// OutputStream contains non-Send raw pointers (cpal), but we only access it under a Mutex.
+unsafe impl Send for PlaybackState {}
+unsafe impl Sync for PlaybackState {}
+
 impl PlaybackState {
     pub fn new() -> Self {
         PlaybackState {
             inner: Mutex::new(None),
+            stream: Mutex::new(None),
+            stream_handle: Mutex::new(None),
             sleep_cancel: Mutex::new(None),
             sleep_end_time: Mutex::new(None),
             pre_sleep_volume: Mutex::new(None),
@@ -141,17 +147,32 @@ impl PlaybackState {
         }
     }
 
-    fn init_inner() -> Result<PlaybackInner, String> {
-        let (stream, stream_handle) =
-            OutputStream::try_default().map_err(|e| format!("Audio output error: {}", e))?;
-        let sink =
-            Sink::try_new(&stream_handle).map_err(|e| format!("Sink creation error: {}", e))?;
+    /// Ensure the shared audio output stream exists, creating it if needed.
+    fn ensure_stream(&self) -> Result<(), String> {
+        let mut stream_guard = self.stream.lock().map_err(|e| e.to_string())?;
+        if stream_guard.is_none() {
+            let (stream, handle) =
+                OutputStream::try_default().map_err(|e| format!("Audio output error: {}", e))?;
+            *stream_guard = Some(stream);
+            *self.stream_handle.lock().map_err(|e| e.to_string())? = Some(handle);
+        }
+        Ok(())
+    }
+
+    fn create_sink(&self) -> Result<Sink, String> {
+        self.ensure_stream()?;
+        let handle_guard = self.stream_handle.lock().map_err(|e| e.to_string())?;
+        let handle = handle_guard.as_ref().ok_or("No audio stream handle")?;
+        let sink = Sink::try_new(handle).map_err(|e| format!("Sink creation error: {}", e))?;
         sink.pause();
+        Ok(sink)
+    }
+
+    fn init_inner(&self) -> Result<PlaybackInner, String> {
+        let sink = self.create_sink()?;
 
         Ok(PlaybackInner {
             sink,
-            _stream: stream,
-            _stream_handle: stream_handle,
             current_track_id: None,
             queue: Vec::new(),
             queue_index: 0,
@@ -185,7 +206,7 @@ impl PlaybackState {
 
         let source = AudioSource::open(path)?;
 
-        let mut inner = Self::init_inner()?;
+        let mut inner = self.init_inner()?;
         inner.volume = volume;
         inner.queue = queue;
         inner.queue_index = queue_index;
@@ -684,7 +705,7 @@ impl PlaybackState {
         let source = AudioSource::open(path)?;
 
         // Create new playback
-        let mut inner = Self::init_inner()?;
+        let mut inner = self.init_inner()?;
         inner.volume = volume;
         inner.queue = queue;
         inner.queue_index = queue_index;
@@ -708,11 +729,9 @@ impl PlaybackState {
             let cancel_flag = Arc::new(AtomicBool::new(false));
             *self.crossfade_cancel.lock().unwrap() = Some(cancel_flag.clone());
 
-            // Store old sink to keep it alive
+            // Store old sink to keep it alive during fade-out
             *self.crossfade_old_sink.lock().unwrap() = Some(CrossfadeOldSink {
                 sink: old.sink,
-                _stream: old._stream,
-                _stream_handle: old._stream_handle,
             });
 
             let thread_state = Arc::new(CrossfadeThread {
@@ -982,8 +1001,16 @@ impl PlaybackState {
         let shuffle_next = old.shuffle_next;
         let duration = old.duration;
 
-        // Drop the old stream by replacing with a new one
-        let mut inner = Self::init_inner()?;
+        // Drop the old stream and recreate for the new audio device
+        {
+            let mut stream_guard = self.stream.lock().map_err(|e| e.to_string())?;
+            *stream_guard = None;
+            drop(stream_guard);
+            let mut handle_guard = self.stream_handle.lock().map_err(|e| e.to_string())?;
+            *handle_guard = None;
+            drop(handle_guard);
+        }
+        let mut inner = self.init_inner()?;
         inner.volume = volume;
         inner.sink.set_volume(volume);
         inner.queue = queue;
