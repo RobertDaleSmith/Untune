@@ -26,7 +26,7 @@ pub struct PlaybackInner {
     repeat_mode: RepeatMode,
     shuffle_history: Vec<usize>,
     shuffle_forward: Vec<usize>,
-    shuffle_next: Option<usize>,
+    shuffle_upcoming: Vec<usize>,
     frequency_data: SharedFrequencyData,
     play_recorded: bool,
     crossfade_triggered: bool,
@@ -185,7 +185,7 @@ impl PlaybackState {
             repeat_mode: RepeatMode::Off,
             shuffle_history: Vec::new(),
             shuffle_forward: Vec::new(),
-            shuffle_next: None,
+            shuffle_upcoming: Vec::new(),
             frequency_data: analyzer::new_shared_frequency_data(),
             play_recorded: false,
             crossfade_triggered: false,
@@ -388,8 +388,9 @@ impl PlaybackState {
         if let Some(inner) = guard.as_mut() {
             inner.queue = ids;
             inner.queue_index = start_index;
+            inner.shuffle_upcoming.clear();
             if inner.shuffle && !inner.queue.is_empty() {
-                inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), start_index));
+                Self::fill_shuffle_upcoming(inner);
             }
         }
         Ok(())
@@ -404,22 +405,41 @@ impl PlaybackState {
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
         if let Some(inner) = guard.as_mut() {
             inner.shuffle = enabled;
+            inner.shuffle_upcoming.clear();
             if enabled && !inner.queue.is_empty() {
-                inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), inner.queue_index));
-            } else {
-                inner.shuffle_next = None;
+                Self::fill_shuffle_upcoming(inner);
             }
         }
         Ok(())
     }
 
-    fn pick_random(queue_len: usize, current_index: usize) -> usize {
+    const SHUFFLE_UPCOMING_TARGET: usize = 50;
+
+    fn pick_random(queue_len: usize, avoid_index: usize) -> usize {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         Instant::now().hash(&mut hasher);
-        current_index.hash(&mut hasher);
-        hasher.finish() as usize % queue_len
+        avoid_index.hash(&mut hasher);
+        let idx = hasher.finish() as usize % queue_len;
+        if idx == avoid_index && queue_len > 1 {
+            (idx + 1) % queue_len
+        } else {
+            idx
+        }
+    }
+
+    /// Fill shuffle_upcoming to the target size, avoiding the current index.
+    fn fill_shuffle_upcoming(inner: &mut PlaybackInner) {
+        if inner.queue.len() <= 1 {
+            return;
+        }
+        let last = inner.shuffle_upcoming.last().copied().unwrap_or(inner.queue_index);
+        while inner.shuffle_upcoming.len() < Self::SHUFFLE_UPCOMING_TARGET {
+            let prev = inner.shuffle_upcoming.last().copied().unwrap_or(last);
+            let next = Self::pick_random(inner.queue.len(), prev);
+            inner.shuffle_upcoming.push(next);
+        }
     }
 
     /// Compute the next track to play, handling shuffle forward stack, history, and pre-pick.
@@ -440,21 +460,20 @@ impl PlaybackState {
                     if fwd_idx < inner.queue.len() {
                         inner.shuffle_history.push(inner.queue_index);
                         inner.queue_index = fwd_idx;
-                        // Ensure we have a pre-pick ready
-                        if inner.shuffle_next.is_none() {
-                            inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), fwd_idx));
-                        }
+                        Self::fill_shuffle_upcoming(inner);
                         return Some((inner.queue[fwd_idx], fwd_idx));
                     }
                 }
-                // 2. Use pre-picked next or pick fresh
-                let rand_idx = inner.shuffle_next.take()
-                    .unwrap_or_else(|| Self::pick_random(inner.queue.len(), inner.queue_index));
+                // 2. Consume from pre-generated upcoming list
+                let rand_idx = if !inner.shuffle_upcoming.is_empty() {
+                    inner.shuffle_upcoming.remove(0)
+                } else {
+                    Self::pick_random(inner.queue.len(), inner.queue_index)
+                };
                 inner.shuffle_history.push(inner.queue_index);
                 inner.shuffle_forward.clear();
                 inner.queue_index = rand_idx;
-                // Pre-pick the one after that
-                inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), rand_idx));
+                Self::fill_shuffle_upcoming(inner);
                 Some((inner.queue[rand_idx], rand_idx))
             } else {
                 let next = inner.queue_index + 1;
@@ -533,12 +552,11 @@ impl PlaybackState {
                     next_ids.push(inner.queue[idx]);
                 }
             }
-            // Then the pre-picked next
-            if next_ids.len() < count {
-                if let Some(idx) = inner.shuffle_next {
-                    if idx < inner.queue.len() {
-                        next_ids.push(inner.queue[idx]);
-                    }
+            // Then from pre-generated upcoming list
+            let remaining = count - next_ids.len();
+            for &idx in inner.shuffle_upcoming.iter().take(remaining) {
+                if idx < inner.queue.len() {
+                    next_ids.push(inner.queue[idx]);
                 }
             }
         } else {
@@ -587,11 +605,10 @@ impl PlaybackState {
                     next.push((inner.queue[idx], idx));
                 }
             }
-            if next.len() < count {
-                if let Some(idx) = inner.shuffle_next {
-                    if idx < inner.queue.len() {
-                        next.push((inner.queue[idx], idx));
-                    }
+            let remaining = count - next.len();
+            for &idx in inner.shuffle_upcoming.iter().take(remaining) {
+                if idx < inner.queue.len() {
+                    next.push((inner.queue[idx], idx));
                 }
             }
         } else {
@@ -718,17 +735,18 @@ impl PlaybackState {
                 if let Some(fwd_idx) = inner.shuffle_forward.pop() {
                     inner.shuffle_history.push(inner.queue_index);
                     inner.queue_index = fwd_idx;
-                    if inner.shuffle_next.is_none() {
-                        inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), fwd_idx));
-                    }
+                    Self::fill_shuffle_upcoming(inner);
                     fwd_idx
                 } else {
-                    let rand_idx = inner.shuffle_next.take()
-                        .unwrap_or_else(|| Self::pick_random(inner.queue.len(), inner.queue_index));
+                    let rand_idx = if !inner.shuffle_upcoming.is_empty() {
+                        inner.shuffle_upcoming.remove(0)
+                    } else {
+                        Self::pick_random(inner.queue.len(), inner.queue_index)
+                    };
                     inner.shuffle_history.push(inner.queue_index);
                     inner.shuffle_forward.clear();
                     inner.queue_index = rand_idx;
-                    inner.shuffle_next = Some(Self::pick_random(inner.queue.len(), rand_idx));
+                    Self::fill_shuffle_upcoming(inner);
                     rand_idx
                 }
             } else {
@@ -1079,7 +1097,7 @@ impl PlaybackState {
         let repeat_mode = old.repeat_mode;
         let shuffle_history = old.shuffle_history.clone();
         let shuffle_forward = old.shuffle_forward.clone();
-        let shuffle_next = old.shuffle_next;
+        let shuffle_upcoming = old.shuffle_upcoming.clone();
         let duration = old.duration;
 
         // Drop the old stream and recreate for the new audio device
@@ -1100,7 +1118,7 @@ impl PlaybackState {
         inner.repeat_mode = repeat_mode;
         inner.shuffle_history = shuffle_history;
         inner.shuffle_forward = shuffle_forward;
-        inner.shuffle_next = shuffle_next;
+        inner.shuffle_upcoming = shuffle_upcoming;
         inner.current_track_id = track_id;
         inner.duration = duration;
 
