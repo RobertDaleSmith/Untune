@@ -180,6 +180,33 @@ export async function getUpcomingTracks(count: number): Promise<UpcomingTracks> 
   return invoke<UpcomingTracks>("get_upcoming_tracks", { count });
 }
 
+export interface QueueEntry {
+  trackId: number;
+  queueIndex: number;
+}
+
+export interface QueueSnapshot {
+  prev: QueueEntry[];
+  current: QueueEntry | null;
+  next: QueueEntry[];
+}
+
+export async function getQueueSnapshot(count: number): Promise<QueueSnapshot> {
+  return invoke<QueueSnapshot>("get_queue_snapshot", { count });
+}
+
+export async function removeFromQueue(index: number): Promise<void> {
+  return invoke("remove_from_queue", { index });
+}
+
+export async function jumpToQueueIndex(index: number): Promise<number> {
+  return invoke<number>("jump_to_queue_index", { index });
+}
+
+export async function moveQueueItem(fromIndex: number, toIndex: number): Promise<void> {
+  return invoke("move_queue_item", { fromIndex, toIndex });
+}
+
 export async function getPreference(key: string): Promise<string | null> {
   return invoke<string | null>("get_preference", { key });
 }

@@ -17,6 +17,7 @@ import { useAssistantStore } from "./stores/assistantStore";
 import { useDragRegion } from "./hooks/useDragRegion";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
+import { QueuePanel } from "./components/QueuePanel";
 import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
 
 function App() {
@@ -599,6 +600,7 @@ function App() {
         </div>
       </div>
 
+      <QueuePanel />
       <AssistantPanel />
       <AssistantApiKeyModal />
       {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}

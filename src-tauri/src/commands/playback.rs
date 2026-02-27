@@ -149,6 +149,62 @@ pub fn get_upcoming_tracks(
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueEntry {
+    pub track_id: i64,
+    pub queue_index: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueSnapshot {
+    pub prev: Vec<QueueEntry>,
+    pub current: Option<QueueEntry>,
+    pub next: Vec<QueueEntry>,
+}
+
+#[tauri::command]
+pub fn get_queue_snapshot(
+    count: usize,
+    playback: State<'_, PlaybackState>,
+) -> QueueSnapshot {
+    let (prev, current, next) = playback.queue_snapshot(count.min(50));
+    QueueSnapshot {
+        prev: prev.into_iter().map(|(track_id, queue_index)| QueueEntry { track_id, queue_index }).collect(),
+        current: current.map(|(track_id, queue_index)| QueueEntry { track_id, queue_index }),
+        next: next.into_iter().map(|(track_id, queue_index)| QueueEntry { track_id, queue_index }).collect(),
+    }
+}
+
+#[tauri::command]
+pub fn remove_from_queue(
+    index: usize,
+    playback: State<'_, PlaybackState>,
+) -> Result<(), String> {
+    playback.remove_from_queue(index)
+}
+
+#[tauri::command]
+pub fn jump_to_queue_index(
+    index: usize,
+    db: State<'_, Database>,
+    playback: State<'_, PlaybackState>,
+) -> Result<i64, String> {
+    let track_id = playback.jump_to_queue_index(index)?;
+    lookup_and_play(track_id, &db, &playback)?;
+    Ok(track_id)
+}
+
+#[tauri::command]
+pub fn move_queue_item(
+    from_index: usize,
+    to_index: usize,
+    playback: State<'_, PlaybackState>,
+) -> Result<(), String> {
+    playback.move_queue_item(from_index, to_index)
+}
+
 #[tauri::command]
 pub fn get_playback_info(playback: State<'_, PlaybackState>) -> PlaybackInfo {
     // Check for gapless transition before reading state

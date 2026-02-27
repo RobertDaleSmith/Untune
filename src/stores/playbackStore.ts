@@ -50,8 +50,10 @@ interface PlaybackState {
   audioDevices: AudioDevice[];
   sleepTimerRemaining: number | null;
   crossfadeDuration: number;
+  queuePanelOpen: boolean;
 
   showError: (msg: string) => void;
+  toggleQueuePanel: () => void;
   requestScrollToNowPlaying: () => void;
   play: (trackIds: number[], startIndex: number, source?: string) => Promise<void>;
   pause: () => Promise<void>;
@@ -94,6 +96,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   audioDevices: [],
   sleepTimerRemaining: null,
   crossfadeDuration: 0,
+  queuePanelOpen: false,
+
+  toggleQueuePanel: () => set((s) => ({ queuePanelOpen: !s.queuePanelOpen })),
 
   showError: (msg: string) => {
     const prev = get()._errorTimer;

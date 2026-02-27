@@ -69,6 +69,8 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
     sleepTimerRemaining,
     setSleepTimer,
     cancelSleepTimer,
+    queuePanelOpen,
+    toggleQueuePanel,
   } = usePlaybackStore();
 
   const { navigateTo, navigateToPlaylist, navigateToAlbum, navigateToArtist, navigateToGenre } =
@@ -467,6 +469,17 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                </button>
+              </div>
+              <div className="relative hidden sm:block">
+                <button
+                  onClick={toggleQueuePanel}
+                  className={`p-1.5 transition-colors ${queuePanelOpen ? "text-accent" : "text-n-500 hover:text-n-300"}`}
+                  title="Play queue"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <path d="M4 6h16M4 12h12M4 18h8M19 14v6M16 17h6" />
                   </svg>
                 </button>
               </div>

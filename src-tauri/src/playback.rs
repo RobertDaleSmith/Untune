@@ -481,6 +481,59 @@ impl PlaybackState {
         (prev_ids, next_ids)
     }
 
+    /// Returns a queue snapshot with absolute indices: (prev, current, next)
+    pub fn queue_snapshot(&self, count: usize) -> (Vec<(i64, usize)>, Option<(i64, usize)>, Vec<(i64, usize)>) {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(inner) = guard.as_ref() else {
+            return (vec![], None, vec![]);
+        };
+        if inner.queue.is_empty() {
+            return (vec![], None, vec![]);
+        }
+
+        let current = Some((inner.queue[inner.queue_index], inner.queue_index));
+
+        // Previous
+        let mut prev = Vec::new();
+        if inner.shuffle {
+            for &idx in inner.shuffle_history.iter().rev().take(count) {
+                if idx < inner.queue.len() {
+                    prev.push((inner.queue[idx], idx));
+                }
+            }
+        } else {
+            let start = inner.queue_index.saturating_sub(count);
+            for i in (start..inner.queue_index).rev() {
+                prev.push((inner.queue[i], i));
+            }
+        }
+
+        // Next
+        let mut next = Vec::new();
+        if inner.shuffle {
+            for &idx in inner.shuffle_forward.iter().rev().take(count) {
+                if idx < inner.queue.len() {
+                    next.push((inner.queue[idx], idx));
+                }
+            }
+            if next.len() < count {
+                if let Some(idx) = inner.shuffle_next {
+                    if idx < inner.queue.len() {
+                        next.push((inner.queue[idx], idx));
+                    }
+                }
+            }
+        } else {
+            let start = inner.queue_index + 1;
+            let end = (start + count).min(inner.queue.len());
+            for i in start..end {
+                next.push((inner.queue[i], i));
+            }
+        }
+
+        (prev, current, next)
+    }
+
     pub fn repeat_mode(&self) -> RepeatMode {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().map(|i| i.repeat_mode).unwrap_or(RepeatMode::Off)
@@ -690,6 +743,55 @@ impl PlaybackState {
             inner.queue.iter().position(|&id| id == track_id)
                 .unwrap_or(inner.queue_index + 1)
         }).unwrap_or(0)
+    }
+
+    pub fn remove_from_queue(&self, index: usize) -> Result<(), String> {
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+        if let Some(inner) = guard.as_mut() {
+            if index >= inner.queue.len() || index == inner.queue_index {
+                return Err("Cannot remove current or invalid index".to_string());
+            }
+            inner.queue.remove(index);
+            // Adjust queue_index if removed item was before current
+            if index < inner.queue_index {
+                inner.queue_index -= 1;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn jump_to_queue_index(&self, index: usize) -> Result<i64, String> {
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+        if let Some(inner) = guard.as_mut() {
+            if index >= inner.queue.len() {
+                return Err("Invalid queue index".to_string());
+            }
+            inner.queue_index = index;
+            let track_id = inner.queue[index];
+            Ok(track_id)
+        } else {
+            Err("No playback active".to_string())
+        }
+    }
+
+    pub fn move_queue_item(&self, from_index: usize, to_index: usize) -> Result<(), String> {
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+        if let Some(inner) = guard.as_mut() {
+            if from_index >= inner.queue.len() || to_index >= inner.queue.len() {
+                return Err("Invalid index".to_string());
+            }
+            let item = inner.queue.remove(from_index);
+            inner.queue.insert(to_index, item);
+            // Adjust queue_index to follow the current track
+            if inner.queue_index == from_index {
+                inner.queue_index = to_index;
+            } else if from_index < inner.queue_index && to_index >= inner.queue_index {
+                inner.queue_index -= 1;
+            } else if from_index > inner.queue_index && to_index <= inner.queue_index {
+                inner.queue_index += 1;
+            }
+        }
+        Ok(())
     }
 
     pub fn frequency_data(&self) -> Option<SharedFrequencyData> {
