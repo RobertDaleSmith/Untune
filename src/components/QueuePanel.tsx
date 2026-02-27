@@ -21,6 +21,7 @@ export function QueuePanel() {
   const tracks = useLibraryStore((s) => s.tracks);
 
   const [entries, setEntries] = useState<QueueDisplayEntry[]>([]);
+  const nowPlayingRef = useRef<HTMLDivElement>(null);
 
   // Build a lookup map for tracks
   const trackMap = useRef<Map<number, Track>>(new Map());
@@ -77,6 +78,23 @@ export function QueuePanel() {
     return () => clearInterval(timer);
   }, [fetchQueue, queuePanelOpen]);
 
+  // Scroll to now-playing when panel opens or current track changes
+  const lastScrolledTrack = useRef<number | null>(null);
+  useEffect(() => {
+    if (!queuePanelOpen) {
+      lastScrolledTrack.current = null;
+      return;
+    }
+    if (entries.length === 0) return;
+    const currentEntry = entries.find((e) => e.section === "current");
+    if (!currentEntry || currentEntry.trackId === lastScrolledTrack.current) return;
+    lastScrolledTrack.current = currentEntry.trackId;
+    // Wait a frame for the DOM to update
+    requestAnimationFrame(() => {
+      nowPlayingRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+    });
+  }, [queuePanelOpen, entries]);
+
   const handleJump = useCallback(async (entry: QueueDisplayEntry) => {
     if (entry.section === "current") return;
     try {
@@ -131,7 +149,10 @@ export function QueuePanel() {
               const showLabel = entry.section !== prevSection;
 
               return (
-                <div key={`${entry.section}-${entry.queueIndex}-${entry.trackId}`}>
+                <div
+                  key={`${entry.section}-${entry.queueIndex}-${entry.trackId}`}
+                  ref={entry.section === "current" ? nowPlayingRef : undefined}
+                >
                   {showLabel && (
                     <div className="px-4 pt-3 pb-1 text-[10px] font-medium text-n-500 uppercase tracking-wider">
                       {entry.section === "history" && "History"}
