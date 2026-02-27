@@ -16,6 +16,7 @@ import { AssistantApiKeyModal } from "./components/AssistantApiKeyModal";
 import { useAssistantStore } from "./stores/assistantStore";
 import { useDragRegion } from "./hooks/useDragRegion";
 import { MiniPlayer } from "./components/MiniPlayer";
+import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
 import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
 
 function App() {
@@ -41,6 +42,7 @@ function App() {
   const showStatusBar = useThemeStore((s) => s.showStatusBar);
   const showAlbumAccent = useThemeStore((s) => s.showAlbumAccent);
   const isMiniPlayer = useThemeStore((s) => s.isMiniPlayer);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const setTracksLoading = useLibraryStore((s) => s.setTracksLoading);
 
@@ -280,6 +282,9 @@ function App() {
       } else if (e.key === "j" && e.metaKey) {
         e.preventDefault();
         useAssistantStore.getState().toggle();
+      } else if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -596,6 +601,7 @@ function App() {
 
       <AssistantPanel />
       <AssistantApiKeyModal />
+      {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }
