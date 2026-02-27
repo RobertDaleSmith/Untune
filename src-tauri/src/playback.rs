@@ -30,6 +30,10 @@ pub struct PlaybackInner {
     shuffle_forward: Vec<usize>,
     shuffle_next: Option<usize>,
     frequency_data: SharedFrequencyData,
+    next_track_appended: bool,
+    appended_track_id: Option<i64>,
+    appended_track_duration: Option<f64>,
+    appended_queue_index: Option<usize>,
 }
 
 // SAFETY: PlaybackInner is only accessed behind a Mutex, so all access is serialized.
@@ -133,6 +137,10 @@ impl PlaybackState {
             shuffle_forward: Vec::new(),
             shuffle_next: None,
             frequency_data: analyzer::new_shared_frequency_data(),
+            next_track_appended: false,
+            appended_track_id: None,
+            appended_track_duration: None,
+            appended_queue_index: None,
         })
     }
 
@@ -163,6 +171,10 @@ impl PlaybackState {
         inner.duration = duration;
         inner.play_started_at = Some(Instant::now());
         inner.accumulated_position = 0.0;
+        inner.next_track_appended = false;
+        inner.appended_track_id = None;
+        inner.appended_track_duration = None;
+        inner.appended_queue_index = None;
 
         *guard = Some(inner);
         Ok(())
@@ -453,6 +465,78 @@ impl PlaybackState {
             inner.repeat_mode = mode;
         }
         Ok(())
+    }
+
+    /// Pre-buffer the next track by appending it to the sink.
+    /// Returns the track ID of the appended track, or None if nothing to append.
+    pub fn pre_buffer_next(&self, file_path: &str, track_id: i64, duration: Option<f64>, queue_index: usize) -> Result<bool, String> {
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+        if let Some(inner) = guard.as_mut() {
+            if inner.next_track_appended {
+                return Ok(false); // Already appended
+            }
+            let source = AudioSource::open(file_path)?;
+            let analyzed = analyzer::AnalyzedSource::new(source, inner.frequency_data.clone());
+            inner.sink.append(analyzed);
+            inner.next_track_appended = true;
+            inner.appended_track_id = Some(track_id);
+            inner.appended_track_duration = duration;
+            inner.appended_queue_index = Some(queue_index);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Check if a gapless transition occurred (sink queue drained from 2 to 1).
+    /// If so, advance internal state and return the new track ID.
+    pub fn check_gapless_transition(&self) -> Option<i64> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = guard.as_mut()?;
+
+        if !inner.next_track_appended {
+            return None;
+        }
+
+        // sink.len() returns number of queued sources
+        if inner.sink.len() <= 1 {
+            // The appended track is now playing (or sink is empty = track ended)
+            let new_id = inner.appended_track_id.take()?;
+            let new_duration = inner.appended_track_duration.take();
+            let new_queue_index = inner.appended_queue_index.take();
+
+            inner.next_track_appended = false;
+            inner.current_track_id = Some(new_id);
+            inner.duration = new_duration;
+            inner.play_started_at = Some(Instant::now());
+            inner.accumulated_position = 0.0;
+
+            if let Some(idx) = new_queue_index {
+                if inner.shuffle {
+                    inner.shuffle_history.push(inner.queue_index);
+                }
+                inner.queue_index = idx;
+            }
+
+            Some(new_id)
+        } else {
+            None
+        }
+    }
+
+    /// Returns true if a next track has already been appended for gapless playback.
+    #[allow(dead_code)]
+    pub fn has_next_appended(&self) -> bool {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().map(|i| i.next_track_appended).unwrap_or(false)
+    }
+
+    pub fn find_queue_index(&self, track_id: i64) -> usize {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().map(|inner| {
+            inner.queue.iter().position(|&id| id == track_id)
+                .unwrap_or(inner.queue_index + 1)
+        }).unwrap_or(0)
     }
 
     pub fn frequency_data(&self) -> Option<SharedFrequencyData> {

@@ -21,6 +21,7 @@ pub struct PlaybackInfo {
     pub volume: f32,
     pub shuffle: bool,
     pub repeat_mode: String,
+    pub transitioned_to: Option<i64>,
 }
 
 fn lookup_and_play(
@@ -144,6 +145,9 @@ pub fn get_upcoming_tracks(
 
 #[tauri::command]
 pub fn get_playback_info(playback: State<'_, PlaybackState>) -> PlaybackInfo {
+    // Check for gapless transition before reading state
+    let transitioned_to = playback.check_gapless_transition();
+
     let repeat_str = match playback.repeat_mode() {
         RepeatMode::Off => "off",
         RepeatMode::All => "all",
@@ -158,6 +162,29 @@ pub fn get_playback_info(playback: State<'_, PlaybackState>) -> PlaybackInfo {
         volume: playback.volume(),
         shuffle: playback.shuffle(),
         repeat_mode: repeat_str.to_string(),
+        transitioned_to,
+    }
+}
+
+#[tauri::command]
+pub fn pre_buffer_next(
+    track_id: i64,
+    db: State<'_, Database>,
+    playback: State<'_, PlaybackState>,
+) -> Result<bool, String> {
+    // Look up the next track's file info
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let info = db::get_track_file_info(&conn, track_id)
+        .map_err(|e| format!("Track not found: {}", e))?;
+    drop(conn);
+
+    match info {
+        Some((path, duration)) => {
+            // peek_next_queue_index computes where this track is in the queue
+            let queue_index = playback.find_queue_index(track_id);
+            playback.pre_buffer_next(&path, track_id, duration, queue_index)
+        }
+        None => Ok(false),
     }
 }
 

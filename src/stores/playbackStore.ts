@@ -21,6 +21,8 @@ import {
   getAudioRoute,
   getAudioDevices,
   setAudioDevice,
+  preBufferNext,
+  getUpcomingTracks,
   setSleepTimer as setSleepTimerCmd,
   cancelSleepTimer as cancelSleepTimerCmd,
   getSleepTimerRemaining,
@@ -250,6 +252,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         shuffle: info.shuffle,
         repeatMode: info.repeatMode,
       });
+      // Handle gapless transition
+      if (info.transitionedTo != null) {
+        set({ currentTrackId: info.transitionedTo, position: 0, isPlaying: true });
+        setPreference("session.trackId", String(info.transitionedTo)).catch(() => {});
+        setPreference("session.position", "0").catch(() => {});
+        return;
+      }
+      // Pre-buffer next track when near end (within 10s)
+      if (info.isPlaying && info.duration && info.position > info.duration - 10) {
+        getUpcomingTracks(1).then(({ nextTrackIds }) => {
+          if (nextTrackIds.length > 0) {
+            preBufferNext(nextTrackIds[0]).catch(() => {});
+          }
+        }).catch(() => {});
+      }
       // Poll sleep timer
       getSleepTimerRemaining()
         .then((remaining) => set({ sleepTimerRemaining: remaining }))

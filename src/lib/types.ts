@@ -90,6 +90,7 @@ export interface PlaybackInfo {
   volume: number;
   shuffle: boolean;
   repeatMode: string;
+  transitionedTo: number | null;
 }
 
 export interface AlbumSummary {

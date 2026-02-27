@@ -289,6 +289,10 @@ export async function setAudioDevice(deviceId: number): Promise<void> {
   return invoke("set_audio_device", { deviceId });
 }
 
+export async function preBufferNext(trackId: number): Promise<boolean> {
+  return invoke<boolean>("pre_buffer_next", { trackId });
+}
+
 // --- Sleep timer ---
 
 export async function setSleepTimer(minutes: number): Promise<void> {

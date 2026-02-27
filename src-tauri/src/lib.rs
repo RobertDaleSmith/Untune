@@ -528,6 +528,7 @@ pub fn run() {
             commands::playback::set_sleep_timer,
             commands::playback::cancel_sleep_timer,
             commands::playback::get_sleep_timer_remaining,
+            commands::playback::pre_buffer_next,
             commands::playback::get_frequency_data,
             commands::browse::get_albums,
             commands::browse::get_artists,
