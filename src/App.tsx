@@ -461,29 +461,35 @@ function App() {
     };
   }, [currentArtworkUrl, showAlbumAccent, theme]);
 
-  // Blurred background crossfade state
-  const [bgReady, setBgReady] = useState(false);
-  const [bgSrc, setBgSrc] = useState<string | null>(null);
+  // Two-layer crossfade for blurred background artwork
+  const [bgBottom, setBgBottom] = useState<string | null>(null);
+  const [bgTop, setBgTop] = useState<string | null>(null);
+  const [bgTopReady, setBgTopReady] = useState(false);
   const prevArtworkRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (currentArtworkUrl === prevArtworkRef.current) return;
     prevArtworkRef.current = currentArtworkUrl;
     if (!currentArtworkUrl) {
-      setBgReady(false);
-      // After fade out, clear the src
-      const t = setTimeout(() => setBgSrc(null), 800);
+      setBgTopReady(false);
+      setBgTop(null);
+      const t = setTimeout(() => setBgBottom(null), 800);
       return () => clearTimeout(t);
     }
-    // Preload the image, then swap
-    setBgReady(false);
+    // Preload the new image, then fade it in on top of the old one
+    setBgTopReady(false);
     const img = new Image();
     img.onload = () => {
-      setBgSrc(currentArtworkUrl);
-      // Small delay to ensure the src is set before fading in
+      setBgTop(currentArtworkUrl);
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => setBgReady(true));
+        requestAnimationFrame(() => setBgTopReady(true));
       });
+      // After fade completes, promote top to bottom and clear top
+      setTimeout(() => {
+        setBgBottom(currentArtworkUrl);
+        setBgTopReady(false);
+        setBgTop(null);
+      }, 900);
     };
     img.src = currentArtworkUrl;
   }, [currentArtworkUrl]);
@@ -568,12 +574,21 @@ function App() {
             className="absolute inset-[-48px] will-change-[filter]"
             style={{ filter: "var(--accent-filter)" }}
           >
-            {bgSrc && (
+            {/* Bottom layer: previous/stable artwork */}
+            {bgBottom && (
               <img
-                src={bgSrc}
+                src={bgBottom}
                 alt=""
-                className="w-full h-full object-cover transition-opacity duration-800 ease-in-out"
-                style={{ opacity: bgReady ? 1 : 0 }}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            )}
+            {/* Top layer: incoming artwork, fades in over bottom */}
+            {bgTop && (
+              <img
+                src={bgTop}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-800 ease-in-out"
+                style={{ opacity: bgTopReady ? 1 : 0 }}
               />
             )}
           </div>
