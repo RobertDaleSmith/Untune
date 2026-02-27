@@ -35,6 +35,37 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
     ? tracks.find((t) => t.id === currentTrackId)
     : null;
 
+  // Two-layer crossfade for blurred background
+  const [bgBottom, setBgBottom] = useState<string | null>(null);
+  const [bgTop, setBgTop] = useState<string | null>(null);
+  const [bgTopReady, setBgTopReady] = useState(false);
+  const prevBgRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (currentArtworkUrl === prevBgRef.current) return;
+    prevBgRef.current = currentArtworkUrl;
+    if (!currentArtworkUrl) {
+      setBgTopReady(false);
+      setBgTop(null);
+      const t = setTimeout(() => setBgBottom(null), 800);
+      return () => clearTimeout(t);
+    }
+    setBgTopReady(false);
+    const img = new Image();
+    img.onload = () => {
+      setBgTop(currentArtworkUrl);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setBgTopReady(true));
+      });
+      setTimeout(() => {
+        setBgBottom(currentArtworkUrl);
+        setBgTopReady(false);
+        setBgTop(null);
+      }, 900);
+    };
+    img.src = currentArtworkUrl;
+  }, [currentArtworkUrl]);
+
   const progressPct = duration && duration > 0 ? (position / duration) * 100 : 0;
 
   const handleProgressClick = useCallback(
@@ -55,8 +86,31 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
       onMouseDown={onDrag}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* Blurred artwork background */}
+      {(bgBottom || bgTop) && (
+        <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
+          <div
+            className="absolute inset-[-24px]"
+            style={{ filter: "blur(32px) saturate(1.8) brightness(0.35)" }}
+          >
+            {bgBottom && (
+              <img src={bgBottom} alt="" className="absolute inset-0 w-full h-full object-cover" />
+            )}
+            {bgTop && (
+              <img
+                src={bgTop}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-800 ease-in-out"
+                style={{ opacity: bgTopReady ? 1 : 0 }}
+              />
+            )}
+          </div>
+          <div className="absolute inset-0" style={{ backgroundColor: "rgba(10,10,10,0.45)" }} />
+        </div>
+      )}
+
       {/* Main content row */}
-      <div className="flex-1 flex items-center min-h-0">
+      <div className="flex-1 flex items-center min-h-0 relative z-10">
         {/* Transport controls */}
         <div className="flex items-center gap-1.5 pl-3 flex-shrink-0">
           {/* Play/Pause */}
@@ -147,7 +201,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         ref={progressRef}
         onClick={handleProgressClick}
         onMouseDown={(e) => e.stopPropagation()}
-        className="h-1 flex-shrink-0 bg-n-800 cursor-pointer group"
+        className="h-1 flex-shrink-0 bg-n-800 cursor-pointer group relative z-10"
       >
         <div
           className="h-full bg-accent group-hover:bg-accent transition-colors"
