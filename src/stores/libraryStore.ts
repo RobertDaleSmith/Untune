@@ -16,6 +16,7 @@ interface LibraryState {
   trackCount: number;
   statusBarTracks: Track[];
   selectedTrackIds: number[];
+  draggedTrackIds: number[];
 
   setTracks: (tracks: Track[]) => void;
   setIsLoading: (v: boolean) => void;
@@ -29,6 +30,7 @@ interface LibraryState {
   setTrackCount: (count: number) => void;
   setStatusBarTracks: (tracks: Track[]) => void;
   setSelectedTrackIds: (ids: number[]) => void;
+  setDraggedTrackIds: (ids: number[]) => void;
   updateTrackRating: (trackId: number, rating: number | null) => void;
 }
 
@@ -46,6 +48,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   trackCount: 0,
   statusBarTracks: [],
   selectedTrackIds: [],
+  draggedTrackIds: [],
 
   setTracks: (tracks) => set({ tracks, isImported: true, isLoading: false, tracksLoading: false }),
   setIsLoading: (isLoading) => set({ isLoading }),
@@ -59,6 +62,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   setTrackCount: (trackCount) => set({ trackCount }),
   setStatusBarTracks: (statusBarTracks) => set({ statusBarTracks }),
   setSelectedTrackIds: (selectedTrackIds) => set({ selectedTrackIds }),
+  setDraggedTrackIds: (draggedTrackIds) => set({ draggedTrackIds }),
   updateTrackRating: (trackId, rating) => {
     const dbRating = rating != null ? rating * 20 : null;
     const updateTrack = (t: Track) =>

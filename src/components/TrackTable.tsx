@@ -119,6 +119,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const [artworkSearchTrack, setArtworkSearchTrack] = useState<{ artist: string; album: string } | null>(null);
   const { currentTrackId, play, togglePlayPause, scrollToNowPlaying } = usePlaybackStore();
   const setSelectedTrackIds = useLibraryStore((s) => s.setSelectedTrackIds);
+  const setDraggedTrackIds = useLibraryStore((s) => s.setDraggedTrackIds);
   const { navigateToAlbum, navigateToArtist } = useNavigationStore();
   const [flashTrackId, setFlashTrackId] = useState<number | null>(null);
   const typeAheadRef = useRef("");
@@ -219,6 +220,40 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     },
     [selectedIndices, syncSelection],
   );
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, sortedIndex: number) => {
+      // If dragging an unselected row, select just that row
+      let ids: number[];
+      if (!selectedIndices.has(sortedIndex)) {
+        const next = new Set([sortedIndex]);
+        setSelectedIndices(next);
+        syncSelection(next);
+        ids = [rows[sortedIndex]?.original.id].filter((id): id is number => id != null);
+      } else {
+        ids = Array.from(selectedIndices)
+          .sort((a, b) => a - b)
+          .map((i) => rows[i]?.original.id)
+          .filter((id): id is number => id != null);
+      }
+      setDraggedTrackIds(ids);
+      e.dataTransfer.setData("text/plain", `tracks:${ids.length}`);
+      e.dataTransfer.effectAllowed = "copy";
+
+      // Create a custom drag image showing the count
+      const ghost = document.createElement("div");
+      ghost.textContent = `${ids.length} track${ids.length > 1 ? "s" : ""}`;
+      ghost.style.cssText = "position:fixed;top:-100px;left:-100px;padding:4px 12px;background:#333;color:#fff;border-radius:6px;font-size:12px;white-space:nowrap;";
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 0, 0);
+      setTimeout(() => document.body.removeChild(ghost), 0);
+    },
+    [selectedIndices, rows, syncSelection, setDraggedTrackIds],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedTrackIds([]);
+  }, [setDraggedTrackIds]);
 
   // Reposition context menu if it overflows the viewport
   useLayoutEffect(() => {
@@ -505,6 +540,9 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             return (
               <tr
                 key={row.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, virtualRow.index)}
+                onDragEnd={handleDragEnd}
                 onClick={(e) => handleRowClick(virtualRow.index, e)}
                 onDoubleClick={() => handleDoubleClick(virtualRow.index)}
                 onContextMenu={(e) => handleContextMenu(e, virtualRow.index)}

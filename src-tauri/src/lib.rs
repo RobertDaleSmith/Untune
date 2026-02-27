@@ -556,6 +556,7 @@ pub fn run() {
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,
             commands::playlists::reorder_playlists,
+            commands::playlists::add_tracks_to_playlist,
             commands::airplay::get_audio_route,
             commands::airplay::get_audio_devices,
             commands::airplay::set_audio_device,

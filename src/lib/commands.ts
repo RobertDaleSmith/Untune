@@ -260,6 +260,10 @@ export async function reorderPlaylists(
   return invoke("reorder_playlists", { updates });
 }
 
+export async function addTracksToPlaylist(playlistId: number, trackIds: number[]): Promise<void> {
+  return invoke("add_tracks_to_playlist", { playlistId, trackIds });
+}
+
 // --- Artwork search ---
 
 export interface ArtworkSearchResult {

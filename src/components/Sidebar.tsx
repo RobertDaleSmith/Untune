@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationStore, type View } from "../stores/navigationStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getPlaylists, getPlaylistTracks, deletePlaylist, renamePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder } from "../lib/commands";
+import { getPlaylists, getPlaylistTracks, deletePlaylist, renamePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder, addTracksToPlaylist } from "../lib/commands";
 import { ArtworkLightbox } from "./ArtworkLightbox";
 import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import type { Playlist } from "../lib/types";
@@ -131,6 +131,10 @@ export function Sidebar() {
   } | null>(null);
   const wasDraggingRef = useRef(false);
   const playlistNavRef = useRef<HTMLElement>(null);
+
+  // Track drop state (drag tracks from TrackTable to playlists)
+  const [trackDropTargetId, setTrackDropTargetId] = useState<number | null>(null);
+  const draggedTrackIds = useLibraryStore((s) => s.draggedTrackIds);
 
   const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
   const artworkUrl = usePlaybackStore((s) => s.currentArtworkUrl);
@@ -472,6 +476,8 @@ export function Sidebar() {
 
   const renderPlaylistButton = (pl: Playlist, depth: number) => {
     const drop = getDropStyles(pl.id);
+    const isValidDropTarget = !pl.isFolder && !pl.isSmart;
+    const isTrackDropHighlighted = trackDropTargetId === pl.id;
     return (
       <button
         key={pl.id}
@@ -490,9 +496,30 @@ export function Sidebar() {
           }
         }}
         onContextMenu={(e) => handleContextMenu(e, pl)}
+        onDragOver={(e) => {
+          if (!isValidDropTarget || draggedTrackIds.length === 0) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          setTrackDropTargetId(pl.id);
+        }}
+        onDragLeave={() => {
+          if (trackDropTargetId === pl.id) setTrackDropTargetId(null);
+        }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setTrackDropTargetId(null);
+          if (!isValidDropTarget || draggedTrackIds.length === 0) return;
+          try {
+            await addTracksToPlaylist(pl.id, draggedTrackIds);
+          } catch {
+            // Ignore duplicate errors
+          }
+        }}
         className={`w-full text-left py-1 text-sm rounded-md truncate transition-colors flex items-center gap-1 ${
           view === "playlist" && playlistId === pl.id
             ? "bg-accent/20 text-n-100"
+            : isTrackDropHighlighted
+            ? "bg-accent/30 text-n-100 ring-1 ring-accent/50"
             : "text-n-400 hover:text-n-200 hover:bg-n-800/50"
         } ${dragId === pl.id ? "opacity-30 scale-95" : ""} ${drop.className}`}
         style={{ paddingLeft: `${8 + depth * 12}px`, paddingRight: "8px", transition: "opacity 150ms, transform 150ms, margin 150ms", ...drop.style }}

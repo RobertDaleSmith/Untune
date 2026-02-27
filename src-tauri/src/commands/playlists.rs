@@ -99,6 +99,16 @@ pub fn create_playlist_folder(
 }
 
 #[tauri::command]
+pub fn add_tracks_to_playlist(
+    db: State<'_, Database>,
+    playlist_id: i64,
+    track_ids: Vec<i64>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    db::add_tracks_to_playlist(&conn, playlist_id, &track_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn reorder_playlists(
     db: State<'_, Database>,
     updates: Vec<PlaylistOrderUpdate>,
