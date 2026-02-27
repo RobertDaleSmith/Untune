@@ -525,6 +525,8 @@ pub fn run() {
             commands::playback::save_view_settings,
             commands::playback::update_now_playing,
             commands::playback::clear_now_playing,
+            commands::playback::set_crossfade_duration,
+            commands::playback::get_crossfade_duration,
             commands::playback::set_sleep_timer,
             commands::playback::cancel_sleep_timer,
             commands::playback::get_sleep_timer_remaining,

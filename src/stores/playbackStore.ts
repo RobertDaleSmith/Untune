@@ -23,6 +23,7 @@ import {
   setAudioDevice,
   preBufferNext,
   getUpcomingTracks,
+  setCrossfadeDuration as setCrossfadeDurationCmd,
   setSleepTimer as setSleepTimerCmd,
   cancelSleepTimer as cancelSleepTimerCmd,
   getSleepTimerRemaining,
@@ -48,6 +49,7 @@ interface PlaybackState {
   audioRoute: AudioRoute | null;
   audioDevices: AudioDevice[];
   sleepTimerRemaining: number | null;
+  crossfadeDuration: number;
 
   showError: (msg: string) => void;
   requestScrollToNowPlaying: () => void;
@@ -68,6 +70,7 @@ interface PlaybackState {
   switchDevice: (deviceId: number) => Promise<void>;
   setSleepTimer: (minutes: number) => Promise<void>;
   cancelSleepTimer: () => Promise<void>;
+  setCrossfadeDuration: (seconds: number) => Promise<void>;
   init: () => Promise<void>;
 }
 
@@ -90,6 +93,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   audioRoute: null,
   audioDevices: [],
   sleepTimerRemaining: null,
+  crossfadeDuration: 0,
 
   showError: (msg: string) => {
     const prev = get()._errorTimer;
@@ -259,8 +263,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         setPreference("session.position", "0").catch(() => {});
         return;
       }
-      // Pre-buffer next track when near end (within 10s)
-      if (info.isPlaying && info.duration && info.position > info.duration - 10) {
+      // Pre-buffer next track when near end (within 10s) — only if crossfade is off
+      if (info.isPlaying && info.duration && info.position > info.duration - 10 && get().crossfadeDuration <= 0) {
         getUpcomingTracks(1).then(({ nextTrackIds }) => {
           if (nextTrackIds.length > 0) {
             preBufferNext(nextTrackIds[0]).catch(() => {});
@@ -350,6 +354,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set({ sleepTimerRemaining: null });
   },
 
+  setCrossfadeDuration: async (seconds: number) => {
+    await setCrossfadeDurationCmd(seconds);
+    set({ crossfadeDuration: seconds });
+    setPreference("crossfadeDuration", String(seconds)).catch(() => {});
+  },
+
   init: async () => {
     try {
       const [trackIdStr, posStr] = await Promise.all([
@@ -369,6 +379,17 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     } catch {
       // Ignore corrupt preferences
     }
+
+    // Load crossfade setting
+    getPreference("crossfadeDuration")
+      .then(async (val) => {
+        const dur = val ? parseFloat(val) : 0;
+        if (!isNaN(dur) && dur > 0) {
+          set({ crossfadeDuration: dur });
+          await setCrossfadeDurationCmd(dur);
+        }
+      })
+      .catch(() => {});
 
     // Fetch initial audio route and device list
     getAudioRoute()

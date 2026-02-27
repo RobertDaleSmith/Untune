@@ -34,7 +34,13 @@ fn lookup_and_play(
         .map_err(|e| format!("Track not found: {}", e))?;
     drop(conn);
     match info {
-        Some((path, duration)) => playback.play(&path, track_id, duration),
+        Some((path, duration)) => {
+            if playback.crossfade_duration() > 0.0 && playback.is_playing() {
+                playback.play_with_crossfade(&path, track_id, duration)
+            } else {
+                playback.play(&path, track_id, duration)
+            }
+        }
         None => Err(format!("Track {} has no file path", track_id)),
     }
 }
@@ -375,6 +381,21 @@ pub fn clear_now_playing(
             .map_err(|e| format!("{:?}", e))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_crossfade_duration(
+    seconds: f32,
+    playback: State<'_, PlaybackState>,
+) -> Result<(), String> {
+    playback.set_crossfade_duration(seconds)
+}
+
+#[tauri::command]
+pub fn get_crossfade_duration(
+    playback: State<'_, PlaybackState>,
+) -> f32 {
+    playback.crossfade_duration()
 }
 
 #[tauri::command]

@@ -289,6 +289,14 @@ export async function setAudioDevice(deviceId: number): Promise<void> {
   return invoke("set_audio_device", { deviceId });
 }
 
+export async function setCrossfadeDuration(seconds: number): Promise<void> {
+  return invoke("set_crossfade_duration", { seconds });
+}
+
+export async function getCrossfadeDuration(): Promise<number> {
+  return invoke<number>("get_crossfade_duration");
+}
+
 export async function preBufferNext(trackId: number): Promise<boolean> {
   return invoke<boolean>("pre_buffer_next", { trackId });
 }

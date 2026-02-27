@@ -96,11 +96,35 @@ impl SleepThreadState {
     }
 }
 
+/// Wrapper to hold old sink + stream during crossfade.
+/// SAFETY: Only accessed behind a Mutex, and only from the crossfade thread.
+struct CrossfadeOldSink {
+    sink: Sink,
+    _stream: OutputStream,
+    _stream_handle: OutputStreamHandle,
+}
+unsafe impl Send for CrossfadeOldSink {}
+unsafe impl Sync for CrossfadeOldSink {}
+
+/// Holds raw pointers to PlaybackState's Mutex fields for the crossfade thread.
+/// SAFETY: PlaybackState is Tauri managed state and lives for the entire app lifetime.
+/// All fields are accessed only via Mutex locks, so access is serialized.
+struct CrossfadeThread {
+    inner_ptr: *const Mutex<Option<PlaybackInner>>,
+    old_sink_ptr: *const Mutex<Option<CrossfadeOldSink>>,
+}
+unsafe impl Send for CrossfadeThread {}
+unsafe impl Sync for CrossfadeThread {}
+
 pub struct PlaybackState {
     pub inner: Mutex<Option<PlaybackInner>>,
     sleep_cancel: Mutex<Option<Arc<AtomicBool>>>,
     sleep_end_time: Mutex<Option<Instant>>,
     pre_sleep_volume: Mutex<Option<f32>>,
+    crossfade_duration: Mutex<f32>,
+    /// Old sink that's fading out during a crossfade. Kept alive until fade completes.
+    crossfade_old_sink: Mutex<Option<CrossfadeOldSink>>,
+    crossfade_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl PlaybackState {
@@ -110,6 +134,9 @@ impl PlaybackState {
             sleep_cancel: Mutex::new(None),
             sleep_end_time: Mutex::new(None),
             pre_sleep_volume: Mutex::new(None),
+            crossfade_duration: Mutex::new(0.0),
+            crossfade_old_sink: Mutex::new(None),
+            crossfade_cancel: Mutex::new(None),
         }
     }
 
@@ -529,6 +556,132 @@ impl PlaybackState {
     pub fn has_next_appended(&self) -> bool {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().map(|i| i.next_track_appended).unwrap_or(false)
+    }
+
+    pub fn crossfade_duration(&self) -> f32 {
+        *self.crossfade_duration.lock().unwrap()
+    }
+
+    pub fn set_crossfade_duration(&self, secs: f32) -> Result<(), String> {
+        *self.crossfade_duration.lock().map_err(|e| e.to_string())? = secs.clamp(0.0, 12.0);
+        Ok(())
+    }
+
+    /// Play a track with crossfade from the currently playing track.
+    /// The old sink is moved to `crossfade_old_sink` and faded out in a background thread.
+    pub fn play_with_crossfade(&self, path: &str, track_id: i64, duration: Option<f64>) -> Result<(), String> {
+        let cf_dur = *self.crossfade_duration.lock().unwrap();
+        if cf_dur <= 0.0 {
+            return self.play(path, track_id, duration);
+        }
+
+        // Cancel any existing crossfade
+        if let Some(flag) = self.crossfade_cancel.lock().unwrap().take() {
+            flag.store(true, Ordering::Relaxed);
+        }
+
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+
+        let volume = guard.as_ref().map(|i| i.volume).unwrap_or(1.0);
+        let queue = guard.as_ref().map(|i| i.queue.clone()).unwrap_or_default();
+        let queue_index = guard.as_ref().map(|i| i.queue_index).unwrap_or(0);
+        let shuffle = guard.as_ref().map(|i| i.shuffle).unwrap_or(false);
+        let repeat_mode = guard.as_ref().map(|i| i.repeat_mode).unwrap_or(RepeatMode::Off);
+        let shuffle_history = guard.as_ref().map(|i| i.shuffle_history.clone()).unwrap_or_default();
+
+        // Take the old inner (sink + stream) for fade-out
+        let old_inner = guard.take();
+
+        let source = AudioSource::open(path)?;
+
+        // Create new playback
+        let mut inner = Self::init_inner()?;
+        inner.volume = volume;
+        inner.queue = queue;
+        inner.queue_index = queue_index;
+        inner.shuffle = shuffle;
+        inner.repeat_mode = repeat_mode;
+        inner.shuffle_history = shuffle_history;
+        inner.sink.set_volume(0.0); // Start at 0 for fade-in
+        let analyzed = analyzer::AnalyzedSource::new(source, inner.frequency_data.clone());
+        inner.sink.append(analyzed);
+        inner.sink.play();
+        inner.current_track_id = Some(track_id);
+        inner.duration = duration;
+        inner.play_started_at = Some(Instant::now());
+        inner.accumulated_position = 0.0;
+
+        *guard = Some(inner);
+        drop(guard);
+
+        // Move old sink to fade-out storage and spawn crossfade thread
+        if let Some(old) = old_inner {
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            *self.crossfade_cancel.lock().unwrap() = Some(cancel_flag.clone());
+
+            // Store old sink to keep it alive
+            *self.crossfade_old_sink.lock().unwrap() = Some(CrossfadeOldSink {
+                sink: old.sink,
+                _stream: old._stream,
+                _stream_handle: old._stream_handle,
+            });
+
+            let thread_state = Arc::new(CrossfadeThread {
+                inner_ptr: &self.inner as *const Mutex<Option<PlaybackInner>>,
+                old_sink_ptr: &self.crossfade_old_sink as *const Mutex<Option<CrossfadeOldSink>>,
+            });
+            let fade_volume = volume;
+
+            std::thread::spawn(move || {
+                let steps = (cf_dur * 20.0) as usize; // 50ms steps
+                for step in 1..=steps {
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+
+                    let t = step as f32 / steps as f32;
+                    // Equal-power curves
+                    let fade_in = t.sqrt() * fade_volume;
+                    let fade_out = (1.0 - t).sqrt() * fade_volume;
+
+                    // Update new sink volume
+                    unsafe {
+                        if let Ok(mut guard) = (*thread_state.inner_ptr).lock() {
+                            if let Some(inner) = guard.as_mut() {
+                                inner.sink.set_volume(fade_in);
+                            }
+                        }
+                    }
+                    // Update old sink volume
+                    unsafe {
+                        if let Ok(guard) = (*thread_state.old_sink_ptr).lock() {
+                            if let Some(ref old) = *guard {
+                                old.sink.set_volume(fade_out);
+                            }
+                        }
+                    }
+                }
+
+                // Fade complete — stop and drop old sink
+                unsafe {
+                    let mut guard = (*thread_state.old_sink_ptr).lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(ref old) = *guard {
+                        old.sink.stop();
+                    }
+                    *guard = None;
+
+                    // Ensure new sink is at full volume
+                    if let Ok(mut g) = (*thread_state.inner_ptr).lock() {
+                        if let Some(inner) = g.as_mut() {
+                            inner.sink.set_volume(inner.volume);
+                        }
+                    }
+                }
+            });
+        }
+
+        Ok(())
     }
 
     pub fn find_queue_index(&self, track_id: i64) -> usize {
