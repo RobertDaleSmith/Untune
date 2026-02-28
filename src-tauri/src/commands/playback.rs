@@ -408,23 +408,31 @@ pub fn update_now_playing(
     if let Some(controls) = guard.as_mut() {
         let dur = duration.map(|d| Duration::from_secs_f64(d));
 
-        // Resolve artwork hash to a file:// URL for the system Now Playing widget.
-        // The path must be percent-encoded (spaces → %20) because souvlaki uses
-        // NSURL URLWithString: which requires a valid URL (unlike fileURLWithPath:).
-        // Build a file:// URL for the artwork using percent-encoding.
-        // Use url::Url::from_file_path for correct encoding (handles all special chars).
-        // souvlaki's ns_image_from_url calls NSImage initWithContentsOfURL: which
-        // panics with abort (non-unwinding) if the URL is invalid or image can't load.
-        // We must guarantee the file exists and the URL is well-formed.
+        // Build a file:// URL for artwork for the system Now Playing widget.
+        // CRITICAL: souvlaki calls NSImage initWithContentsOfURL: and then
+        // msg_send!(image, size) — if NSImage returns nil (corrupt/unsupported
+        // image), this is a non-unwinding panic that aborts the entire process.
+        // We MUST validate the image is loadable before passing it.
         let safe_cover_url = artwork_hash.and_then(|hash| {
             let artwork_dir = Database::artwork_dir(&app).ok()?;
             for ext in &["jpg", "png"] {
                 let path = artwork_dir.join(format!("{}.{}", hash, ext));
-                if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-                    // Use Url::from_file_path for proper percent-encoding
-                    if let Ok(url) = Url::from_file_path(&path) {
-                        return Some(url.to_string());
-                    }
+                if !path.exists() {
+                    continue;
+                }
+                // Read first bytes to verify it's a valid image
+                let data = std::fs::read(&path).ok()?;
+                if data.len() < 8 {
+                    continue;
+                }
+                let valid = (data[0..2] == [0xFF, 0xD8]) // JPEG
+                    || (data[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); // PNG
+                if !valid {
+                    log::warn!("Skipping artwork {}.{}: invalid image header", hash, ext);
+                    continue;
+                }
+                if let Ok(url) = Url::from_file_path(&path) {
+                    return Some(url.to_string());
                 }
             }
             None
