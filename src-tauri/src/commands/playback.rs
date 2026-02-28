@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use souvlaki::{MediaMetadata, MediaPlayback, MediaPosition};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Url};
 
 use crate::analyzer::FrequencyData;
 use crate::db::{self, Database};
@@ -411,46 +411,43 @@ pub fn update_now_playing(
         // Resolve artwork hash to a file:// URL for the system Now Playing widget.
         // The path must be percent-encoded (spaces → %20) because souvlaki uses
         // NSURL URLWithString: which requires a valid URL (unlike fileURLWithPath:).
-        let cover_url = artwork_hash.and_then(|hash| {
+        // Build a file:// URL for the artwork using percent-encoding.
+        // Use url::Url::from_file_path for correct encoding (handles all special chars).
+        // souvlaki's ns_image_from_url calls NSImage initWithContentsOfURL: which
+        // panics with abort (non-unwinding) if the URL is invalid or image can't load.
+        // We must guarantee the file exists and the URL is well-formed.
+        let safe_cover_url = artwork_hash.and_then(|hash| {
             let artwork_dir = Database::artwork_dir(&app).ok()?;
             for ext in &["jpg", "png"] {
                 let path = artwork_dir.join(format!("{}.{}", hash, ext));
-                if path.exists() {
-                    let encoded = path.to_string_lossy()
-                        .replace('%', "%25")
-                        .replace(' ', "%20")
-                        .replace('#', "%23");
-                    return Some(format!("file://{}", encoded));
+                if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                    // Use Url::from_file_path for proper percent-encoding
+                    if let Ok(url) = Url::from_file_path(&path) {
+                        return Some(url.to_string());
+                    }
                 }
             }
             None
         });
 
-        // souvlaki's ns_image_from_url crashes with a non-unwinding panic if
-        // NSImage initWithContentsOfURL: returns nil (e.g. bad URL encoding,
-        // missing file). Validate the artwork URL is loadable before passing it.
-        let safe_cover_url = cover_url.filter(|url| {
-            // Quick sanity: must be a file:// URL pointing to an existing file
-            if let Some(path) = url.strip_prefix("file://") {
-                let decoded = path
-                    .replace("%20", " ")
-                    .replace("%23", "#")
-                    .replace("%25", "%");
-                std::path::Path::new(&decoded).exists()
-            } else {
-                false
-            }
-        });
-
-        controls
-            .set_metadata(MediaMetadata {
+        // Try with artwork first; if it fails, retry without artwork.
+        // souvlaki can abort on bad artwork URLs, so we're extra cautious.
+        if let Err(e) = controls.set_metadata(MediaMetadata {
+            title: Some(&title),
+            artist: artist.as_deref(),
+            album: album.as_deref(),
+            duration: dur,
+            cover_url: safe_cover_url.as_deref(),
+        }) {
+            log::warn!("set_metadata failed with artwork, retrying without: {:?}", e);
+            let _ = controls.set_metadata(MediaMetadata {
                 title: Some(&title),
                 artist: artist.as_deref(),
                 album: album.as_deref(),
                 duration: dur,
-                cover_url: safe_cover_url.as_deref(),
-            })
-            .map_err(|e| format!("{:?}", e))?;
+                cover_url: None,
+            });
+        }
 
         let playback = if is_playing {
             MediaPlayback::Playing {
@@ -461,9 +458,7 @@ pub fn update_now_playing(
                 progress: position.map(|p| MediaPosition(Duration::from_secs_f64(p))),
             }
         };
-        controls
-            .set_playback(playback)
-            .map_err(|e| format!("{:?}", e))?;
+        let _ = controls.set_playback(playback);
     }
     Ok(())
 }
