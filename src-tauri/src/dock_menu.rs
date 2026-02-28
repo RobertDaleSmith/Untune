@@ -42,7 +42,7 @@ unsafe fn make_item(title: &str, action: &str) -> id {
     let item: id = msg_send![cls, alloc];
     let item: id = msg_send![item, initWithTitle:title action:action keyEquivalent:key];
 
-    let handler_cls = Class::get("WavesDockHandler").unwrap();
+    let handler_cls = Class::get("UntuneDockHandler").unwrap();
     let handler: id = msg_send![handler_cls, shared];
     let _: () = msg_send![item, setTarget:handler];
 
@@ -58,12 +58,12 @@ fn emit_event(event: &str) {
 unsafe fn register_dock_handler() {
     use objc::declare::ClassDecl;
 
-    if Class::get("WavesDockHandler").is_some() {
+    if Class::get("UntuneDockHandler").is_some() {
         return;
     }
 
     let superclass = Class::get("NSObject").unwrap();
-    let mut decl = ClassDecl::new("WavesDockHandler", superclass).unwrap();
+    let mut decl = ClassDecl::new("UntuneDockHandler", superclass).unwrap();
 
     extern "C" fn shared_impl(cls: &Class, _sel: Sel) -> id {
         unsafe {

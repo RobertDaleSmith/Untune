@@ -219,7 +219,7 @@ fn parse_criteria(data: &[u8]) -> Option<(String, Vec<RuleEntry>)> {
     Some((match_mode.to_string(), rules))
 }
 
-/// Map a field ID byte to our Waves field name. Returns None for unsupported fields.
+/// Map a field ID byte to our field name. Returns None for unsupported fields.
 fn field_id_to_name(id: u8) -> Option<&'static str> {
     match id {
         0x02 => Some("title"),

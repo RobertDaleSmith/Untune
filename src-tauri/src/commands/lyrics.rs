@@ -66,7 +66,7 @@ pub async fn fetch_lyrics(
     let client = reqwest::Client::new();
     let resp = client
         .get(&url)
-        .header("User-Agent", "Waves Music Player v1.0")
+        .header("User-Agent", "Untune Music Player v1.0")
         .send()
         .await
         .map_err(|e| format!("LRCLIB request failed: {}", e))?;
@@ -95,7 +95,7 @@ pub async fn fetch_lyrics(
 
         if let Ok(resp) = client
             .get(&search_url)
-            .header("User-Agent", "Waves Music Player v1.0")
+            .header("User-Agent", "Untune Music Player v1.0")
             .send()
             .await
         {

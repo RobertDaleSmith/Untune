@@ -42,7 +42,7 @@ fn build_system_prompt(conn: &rusqlite::Connection, playback: &PlaybackState) ->
     };
 
     format!(
-        "You are the voice assistant for Waves, a desktop music player.\n\
+        "You are the voice assistant for Untune, a desktop music player.\n\
          Library: {} tracks, {} albums, {} artists.\n\
          Current playback: {}.\n\
          Be concise — 1-2 sentences. Users are listening to music.\n\

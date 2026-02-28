@@ -189,7 +189,7 @@ pub fn run() {
 
             let menu = MenuBuilder::new(handle)
                 .items(&[
-                    &SubmenuBuilder::new(handle, "Waves")
+                    &SubmenuBuilder::new(handle, "Untune")
                         .about(None)
                         .separator()
                         .item(&MenuItemBuilder::with_id("settings", "Settings...")
@@ -326,8 +326,8 @@ pub fn run() {
 
             // Set up system media key handling (play/pause, next, previous)
             let config = PlatformConfig {
-                display_name: "Waves",
-                dbus_name: "waves",
+                display_name: "Untune",
+                dbus_name: "untune",
                 hwnd: None,
             };
             match MediaControls::new(config) {

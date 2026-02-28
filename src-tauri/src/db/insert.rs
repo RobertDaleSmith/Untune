@@ -127,10 +127,10 @@ pub fn insert_playlist_tracks(
 }
 
 pub fn clear_tracks(conn: &Connection) -> Result<(), rusqlite::Error> {
-    // Preserve user-created smart playlists (persistent_id starts with 'waves-')
+    // Preserve user-created smart playlists (persistent_id starts with 'untune-')
     conn.execute_batch(
-        "DELETE FROM playlist_tracks WHERE playlist_id IN (SELECT id FROM playlists WHERE persistent_id NOT LIKE 'waves-%');
-         DELETE FROM playlists WHERE persistent_id NOT LIKE 'waves-%';
+        "DELETE FROM playlist_tracks WHERE playlist_id IN (SELECT id FROM playlists WHERE persistent_id NOT LIKE 'untune-%');
+         DELETE FROM playlists WHERE persistent_id NOT LIKE 'untune-%';
          DELETE FROM tracks;
          DELETE FROM tracks_fts;",
     )?;
@@ -144,7 +144,7 @@ pub fn insert_smart_playlist(
     parent_id: Option<i64>,
 ) -> Result<i64, rusqlite::Error> {
     let persistent_id = format!(
-        "waves-sp-{}",
+        "untune-sp-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -193,7 +193,7 @@ pub fn insert_regular_playlist(
     parent_id: Option<i64>,
 ) -> Result<i64, rusqlite::Error> {
     let persistent_id = format!(
-        "waves-pl-{}",
+        "untune-pl-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -213,7 +213,7 @@ pub fn insert_playlist_folder(
     parent_id: Option<i64>,
 ) -> Result<i64, rusqlite::Error> {
     let persistent_id = format!(
-        "waves-folder-{}",
+        "untune-folder-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

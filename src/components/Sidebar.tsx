@@ -43,7 +43,7 @@ const libraryItems: { label: string; view: View }[] = [
   { label: "Genres", view: "genres" },
 ];
 
-const STORAGE_KEY = "waves-folder-expanded";
+const STORAGE_KEY = "untune-folder-expanded";
 
 function loadExpandedState(): Set<number> {
   try {
@@ -193,8 +193,8 @@ export function Sidebar() {
       setEditingPlaylist(undefined);
       setEditorOpen(true);
     };
-    window.addEventListener("waves-open-smart-editor", handler);
-    return () => window.removeEventListener("waves-open-smart-editor", handler);
+    window.addEventListener("untune-open-smart-editor", handler);
+    return () => window.removeEventListener("untune-open-smart-editor", handler);
   }, []);
 
   // Close context menu on click anywhere

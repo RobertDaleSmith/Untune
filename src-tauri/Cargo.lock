@@ -5343,6 +5343,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "untune"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "block",
+ "cocoa",
+ "dirs",
+ "lofty",
+ "log",
+ "objc",
+ "plist",
+ "rayon",
+ "reqwest 0.12.28",
+ "rodio",
+ "rusqlite",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2",
+ "souvlaki",
+ "symphonia",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-shell",
+ "walkdir",
+]
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5607,36 +5637,6 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.13.0",
  "semver",
-]
-
-[[package]]
-name = "waves"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "block",
- "cocoa",
- "dirs",
- "lofty",
- "log",
- "objc",
- "plist",
- "rayon",
- "reqwest 0.12.28",
- "rodio",
- "rusqlite",
- "rustfft",
- "serde",
- "serde_json",
- "sha2",
- "souvlaki",
- "symphonia",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-shell",
- "walkdir",
 ]
 
 [[package]]

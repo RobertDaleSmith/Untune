@@ -234,7 +234,7 @@ function App() {
       listen("menu-new-smart-playlist", () => {
         // Emit an event the Sidebar can listen to, or set global state
         useNavigationStore.getState().requestSidebarRefresh();
-        window.dispatchEvent(new CustomEvent("waves-open-smart-editor"));
+        window.dispatchEvent(new CustomEvent("untune-open-smart-editor"));
       }),
       listen("toggle-mini-player", () => {
         useThemeStore.getState().toggleMiniPlayer();

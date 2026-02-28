@@ -111,7 +111,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <div className="px-6 py-4">
           <h3 className="text-[11px] font-medium text-n-500 uppercase tracking-wider mb-3">About</h3>
           <div className="text-[12px] text-n-400 space-y-1">
-            <p><span className="text-n-300">Waves</span> — Music Player</p>
+            <p><span className="text-n-300">Untune</span> — Music Player</p>
             <p>Built with Tauri, React, and Rust</p>
           </div>
         </div>
