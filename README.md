@@ -38,17 +38,28 @@
 - Debounced search with FTS5, type-ahead scroll
 - Per-view shuffle/repeat persistence across restarts
 
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/) 10+
+- [Rust](https://rustup.rs/) 1.77+
+- macOS (required for Apple Music integration and Tauri native features)
+
 ## Development
 
 ```bash
-# Install dependencies
+make install   # Install frontend dependencies
+make dev       # Run app in development (Tauri + Vite HMR)
+make build     # Build production app bundle
+make check     # Type-check frontend (tsc) and backend (cargo check)
+make clean     # Remove build artifacts
+```
+
+Or without Make:
+
+```bash
 pnpm install
-
-# Run in development
 pnpm tauri dev
-
-# Build for production
-pnpm tauri build
 ```
 
 ## License
