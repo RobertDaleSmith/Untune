@@ -55,7 +55,7 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
 
   if (mode === "reimport") {
     return (
-      <div className="shrink-0 bg-n-900/95 border-b border-n-700 px-4 py-2 flex items-center gap-3">
+      <div className="shrink-0 bg-n-900/95 border-b border-n-700 pl-20 pr-4 py-2 flex items-center gap-3">
         <div className="flex items-center gap-2 text-sm text-n-300 whitespace-nowrap">
           {!isDone && (
             <svg className="animate-spin h-3.5 w-3.5 text-accent" viewBox="0 0 24 24" fill="none">
