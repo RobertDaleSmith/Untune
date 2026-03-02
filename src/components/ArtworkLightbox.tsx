@@ -3,6 +3,7 @@ import { getTrackAllArtworks, fetchLyrics } from "../lib/commands";
 import { extractAccentColor } from "../lib/extractAccentColor";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { SyncedLyrics } from "./SyncedLyrics";
+import { AppIcon } from "./AppIcon";
 import { Visualizer, ALL_MODES } from "./Visualizer";
 import type { VisualizerMode } from "./Visualizer";
 
@@ -569,9 +570,8 @@ export function ArtworkLightbox({
 
         {/* App icon watermark */}
         {isOpen && (
-          <img
-            src="/icon-white.png"
-            alt=""
+          <AppIcon
+            color="white"
             className="fixed bottom-4 right-4 h-6 w-auto opacity-20 pointer-events-none z-10"
           />
         )}
@@ -750,9 +750,8 @@ export function ArtworkLightbox({
 
       {/* App icon watermark */}
       {isOpen && (
-        <img
-          src="/icon-white.png"
-          alt=""
+        <AppIcon
+          color="white"
           className="fixed bottom-4 right-4 h-6 w-auto opacity-20 pointer-events-none z-10"
         />
       )}
