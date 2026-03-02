@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="src-tauri/icons/icon.png" width="128" height="128" alt="Waves icon">
+  <img src="assets/icon.png" width="128" height="128" alt="Untune icon">
 </p>
 
-<h1 align="center">Waves</h1>
+<h1 align="center">Untune</h1>
 
 <p align="center">
   A native macOS desktop music player built with Tauri, React, and Rust.<br>
@@ -11,9 +11,9 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="screenshot_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="screenshot_light.png">
-    <img src="screenshot_light.png" alt="Waves screenshot" width="800">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot_light.png">
+    <img src="assets/screenshot_light.png" alt="Untune screenshot" width="800">
   </picture>
 </p>
 
