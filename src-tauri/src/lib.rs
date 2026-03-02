@@ -228,8 +228,6 @@ pub fn run() {
                         .item(&SubmenuBuilder::new(handle, "Export / Import")
                             .item(&MenuItemBuilder::with_id("export-library", "Export Library...")
                                 .build(handle)?)
-                            .item(&MenuItemBuilder::with_id("import-library-file", "Import Library...")
-                                .build(handle)?)
                             .separator()
                             .item(&MenuItemBuilder::with_id("export-ai-tags", "Export AI Tags...")
                                 .build(handle)?)
@@ -434,7 +432,6 @@ pub fn run() {
                 "new-smart-playlist" => { let _ = app.emit("menu-new-smart-playlist", ()); }
                 "new-playlist-folder" => { let _ = app.emit("menu-new-playlist-folder", ()); }
                 "export-library" => { let _ = app.emit("menu-export-library", ()); }
-                "import-library-file" => { let _ = app.emit("menu-import-library-file", ()); }
                 "export-ai-tags" => { let _ = app.emit("menu-export-ai-tags", ()); }
                 "import-ai-tags" => { let _ = app.emit("menu-import-ai-tags", ()); }
                 "export-playlist-m3u" => { let _ = app.emit("menu-export-playlist-m3u", ()); }

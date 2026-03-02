@@ -271,10 +271,6 @@ function App() {
           console.error("Export library failed:", err);
         }
       }),
-      listen("menu-import-library-file", () => {
-        // Re-import from Apple Music (same as reimport)
-        handleImportRef.current();
-      }),
       listen("menu-export-ai-tags", async () => {
         const path = await save({
           defaultPath: "ai_tags_backup.json",
