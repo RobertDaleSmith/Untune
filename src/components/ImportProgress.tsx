@@ -16,6 +16,14 @@ const PHASE_LABELS: Record<string, string> = {
   complete: "Import complete",
 };
 
+const PHASE_DESCRIPTIONS: Record<string, string> = {
+  jxa_tracks: "This may take a few minutes for large libraries. Please don't quit the app.",
+  file_scan: "Reading metadata from audio files...",
+  matching: "Correlating Music app data with files on disk...",
+  db_insert: "Building your searchable library...",
+  playlists: "Importing your playlists and smart playlists...",
+};
+
 export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressProps) {
   const [progress, setProgress] = useState<ImportProgressType>({
     phase: "",
@@ -42,6 +50,7 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
     ? Math.round((progress.current / progress.total) * 100)
     : 0;
   const phaseLabel = PHASE_LABELS[progress.phase] ?? progress.phase;
+  const phaseDescription = PHASE_DESCRIPTIONS[progress.phase];
   const isDone = progress.phase === "complete";
 
   if (mode === "reimport") {
@@ -55,6 +64,9 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
             </svg>
           )}
           <span>{phaseLabel || "Re-importing library..."}</span>
+          {phaseDescription && (
+            <span className="text-n-500 text-xs ml-1 hidden sm:inline">— {phaseDescription}</span>
+          )}
         </div>
         <div className="flex-1 bg-n-800 rounded-full h-1.5 overflow-hidden">
           {hasDeterminate ? (
@@ -84,6 +96,9 @@ export function ImportProgress({ onComplete, mode = "initial" }: ImportProgressP
           Importing Library
         </h2>
         <p className="text-sm text-n-400 mb-1">{phaseLabel}</p>
+        {phaseDescription && (
+          <p className="text-xs text-n-500 mb-1">{phaseDescription}</p>
+        )}
         <p className="text-xs text-n-500 mb-3">{progress.message}</p>
         <div className="w-full bg-n-800 rounded-full h-2 mb-2 overflow-hidden">
           {hasDeterminate ? (

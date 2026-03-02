@@ -1,3 +1,6 @@
+pub mod ai_tag_backup;
+pub mod ai_tagger;
+pub mod bio_generator;
 pub mod jxa;
 pub mod scanner;
 pub mod matcher;
@@ -17,7 +20,7 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
         .join("scripts");
 
     // Phase 1: JXA track extraction
-    emit_progress(app, "jxa_tracks", "Extracting tracks from Music app...", 0, 1);
+    emit_progress(app, "jxa_tracks", "Reading your Music library — this may take a few minutes...", 0, 1);
     let jxa_tracks = jxa::extract_tracks(&scripts_dir).map_err(|e| format!("JXA track extraction failed: {}", e))?;
     let jxa_count = jxa_tracks.len() as u64;
     emit_progress(app, "jxa_tracks", &format!("Extracted {} tracks", jxa_count), 1, 1);
@@ -94,6 +97,50 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
             artwork_by_path.len(),
         );
 
+        // Preserve AI tags from previous import
+        #[derive(Clone)]
+        struct AiTags {
+            mood: Option<String>,
+            energy: Option<i32>,
+            vibe_tags: Option<String>,
+            bpm: Option<i32>,
+            danceability: Option<i32>,
+            acousticness: Option<i32>,
+            ai_tagged_at: Option<String>,
+        }
+        let mut ai_tags_by_pid: std::collections::HashMap<String, AiTags> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT persistent_id, mood, energy, vibe_tags, bpm, danceability, acousticness, ai_tagged_at \
+                     FROM tracks WHERE ai_tagged_at IS NOT NULL AND persistent_id IS NOT NULL"
+                )
+                .map_err(|e| format!("AI tags preserve query failed: {}", e))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        AiTags {
+                            mood: row.get(1)?,
+                            energy: row.get(2)?,
+                            vibe_tags: row.get(3)?,
+                            bpm: row.get(4)?,
+                            danceability: row.get(5)?,
+                            acousticness: row.get(6)?,
+                            ai_tagged_at: row.get(7)?,
+                        },
+                    ))
+                })
+                .map_err(|e| format!("AI tags preserve failed: {}", e))?;
+            for row in rows {
+                if let Ok((pid, tags)) = row {
+                    ai_tags_by_pid.insert(pid, tags);
+                }
+            }
+        }
+        log::info!("Preserved {} AI tag records", ai_tags_by_pid.len());
+
         db::clear_tracks(&conn).map_err(|e| format!("Clear failed: {}", e))?;
         db::batch_insert_tracks(&mut conn, &merged).map_err(|e| format!("Insert failed: {}", e))?;
 
@@ -121,6 +168,54 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
             count
         };
         log::info!("Restored {} artwork hashes from previous import", restored);
+
+        // Restore AI tags
+        let ai_restored = {
+            let tx = conn.transaction().map_err(|e| format!("Tx failed: {}", e))?;
+            let mut count = 0u64;
+            {
+                let mut stmt = tx
+                    .prepare(
+                        "UPDATE tracks SET mood=?1, energy=?2, vibe_tags=?3, bpm=?4, \
+                         danceability=?5, acousticness=?6, ai_tagged_at=?7 \
+                         WHERE persistent_id=?8 AND ai_tagged_at IS NULL"
+                    )
+                    .map_err(|e| e.to_string())?;
+                for (pid, tags) in &ai_tags_by_pid {
+                    count += stmt.execute(rusqlite::params![
+                        tags.mood, tags.energy, tags.vibe_tags, tags.bpm,
+                        tags.danceability, tags.acousticness, tags.ai_tagged_at, pid
+                    ]).unwrap_or(0) as u64;
+                }
+            }
+            tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+            count
+        };
+        log::info!("Restored {} AI tag records from previous import", ai_restored);
+
+        // Auto-restore AI tags from backup file (created during reset_library)
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            let backup_path = app_dir.join("ai_tags_backup.json");
+            if backup_path.exists() {
+                match std::fs::read_to_string(&backup_path) {
+                    Ok(data) => {
+                        match serde_json::from_str::<Vec<ai_tag_backup::AiTagRecord>>(&data) {
+                            Ok(tags) => {
+                                match ai_tag_backup::import_ai_tags_from_file(&conn, &tags) {
+                                    Ok(count) => {
+                                        log::info!("Restored {} AI tags from backup file", count);
+                                    }
+                                    Err(e) => log::warn!("Failed to restore AI tags from backup: {}", e),
+                                }
+                            }
+                            Err(e) => log::warn!("Failed to parse AI tags backup: {}", e),
+                        }
+                        let _ = std::fs::remove_file(&backup_path);
+                    }
+                    Err(e) => log::warn!("Failed to read AI tags backup file: {}", e),
+                }
+            }
+        }
 
         db::rebuild_fts(&conn).map_err(|e| format!("FTS rebuild failed: {}", e))?;
     }
@@ -266,15 +361,33 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
     // Phase 6: Spawn background artwork extraction
     let app_handle = app.clone();
     std::thread::spawn(move || {
-        match artwork::extract_artwork_background(&app_handle) {
-            Ok(()) => {
-                let _ = app_handle.emit("artwork-updated", ());
-            }
-            Err(e) => {
-                log::warn!("Background artwork extraction failed: {}", e);
-            }
+        if let Err(e) = artwork::extract_artwork_background(&app_handle) {
+            log::warn!("Background artwork extraction failed: {}", e);
         }
     });
+
+    // Phase 7: Auto-tag with AI if preference is enabled
+    {
+        let db_state = app.state::<Database>();
+        let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
+        let auto_tag = crate::db::get_preference(&conn, "ai_auto_tag")
+            .ok()
+            .flatten()
+            .as_deref() == Some("true");
+        drop(conn);
+
+        if auto_tag {
+            log::info!("Auto-tagging enabled, spawning AI tagger");
+            let app_handle = app.clone();
+            let progress = ai_tagger::AiTagProgress::new();
+            let progress_clone = progress.clone();
+            std::thread::spawn(move || {
+                tauri::async_runtime::block_on(async {
+                    ai_tagger::run_tagging(app_handle, progress_clone).await;
+                });
+            });
+        }
+    }
 
     emit_progress(app, "complete", "Import complete!", 1, 1);
     Ok(stats)

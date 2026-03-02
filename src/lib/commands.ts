@@ -20,6 +20,14 @@ export async function resetLibrary(): Promise<void> {
   return invoke("reset_library");
 }
 
+export async function exportLibrary(outputPath: string): Promise<number> {
+  return invoke<number>("export_library", { outputPath });
+}
+
+export async function getTrackById(trackId: number): Promise<Track | null> {
+  return invoke<Track | null>("get_track_by_id", { trackId });
+}
+
 export async function getTracks(query: TrackQuery): Promise<Track[]> {
   return invoke<Track[]>("get_tracks", { query });
 }
@@ -448,6 +456,14 @@ export async function getAiTagProgress(): Promise<AiTagProgress> {
 
 export async function retagTracks(trackIds: number[]): Promise<void> {
   return invoke("retag_tracks", { trackIds });
+}
+
+export async function exportAiTags(outputPath: string): Promise<number> {
+  return invoke<number>("export_ai_tags", { outputPath });
+}
+
+export async function importAiTags(filePath: string): Promise<number> {
+  return invoke<number>("import_ai_tags", { filePath });
 }
 
 // --- Bios ---

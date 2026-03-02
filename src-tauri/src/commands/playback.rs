@@ -530,3 +530,83 @@ pub fn get_frequency_data(playback: State<'_, PlaybackState>) -> FrequencyData {
         None => FrequencyData::default(),
     }
 }
+
+#[tauri::command]
+pub fn play_similar(
+    track_id: i64,
+    db: State<'_, Database>,
+    playback: State<'_, PlaybackState>,
+) -> Result<usize, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let tracks = db::similarity::find_similar_tracks(&conn, track_id, 50, &[])
+        .map_err(|e| e.to_string())?;
+    if tracks.is_empty() {
+        return Err("No similar tracks found".to_string());
+    }
+    let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
+    let first_id = ids[0];
+    let count = ids.len();
+
+    let info = db::get_track_file_info(&conn, first_id).map_err(|e| e.to_string())?;
+    drop(conn);
+
+    match info {
+        Some((path, duration)) => {
+            playback.play(&path, first_id, duration)?;
+            playback.set_queue(ids, 0)?;
+            Ok(count)
+        }
+        None => Err("Track has no file path".to_string()),
+    }
+}
+
+// --- Radio Mode ---
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RadioState {
+    pub enabled: bool,
+    pub seed_track_id: Option<i64>,
+}
+
+#[tauri::command]
+pub fn toggle_radio_mode(playback: State<'_, PlaybackState>) -> Result<RadioState, String> {
+    let enabled = playback.toggle_radio();
+    let seed = playback.radio_seed();
+    Ok(RadioState { enabled, seed_track_id: seed })
+}
+
+#[tauri::command]
+pub fn start_radio(
+    track_id: i64,
+    db: State<'_, Database>,
+    playback: State<'_, PlaybackState>,
+) -> Result<RadioState, String> {
+    playback.start_radio(track_id);
+
+    // Play the seed track and queue similar ones
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let similar = db::similarity::find_similar_tracks(&conn, track_id, 25, &[])
+        .map_err(|e| e.to_string())?;
+
+    let mut ids = vec![track_id];
+    ids.extend(similar.iter().map(|t| t.id));
+
+    let info = db::get_track_file_info(&conn, track_id).map_err(|e| e.to_string())?;
+    drop(conn);
+
+    if let Some((path, duration)) = info {
+        playback.play(&path, track_id, duration)?;
+        playback.set_queue(ids, 0)?;
+    }
+
+    Ok(RadioState { enabled: true, seed_track_id: Some(track_id) })
+}
+
+#[tauri::command]
+pub fn get_radio_state(playback: State<'_, PlaybackState>) -> RadioState {
+    RadioState {
+        enabled: playback.radio_enabled(),
+        seed_track_id: playback.radio_seed(),
+    }
+}

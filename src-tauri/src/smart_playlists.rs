@@ -46,6 +46,8 @@ const ALLOWED_FIELDS: &[&str] = &[
     "composer",
     "comments",
     "grouping",
+    "mood",
+    "vibe_tags",
     "year",
     "track_number",
     "disc_number",
@@ -56,6 +58,10 @@ const ALLOWED_FIELDS: &[&str] = &[
     "play_count",
     "skip_count",
     "rating",
+    "energy",
+    "bpm",
+    "danceability",
+    "acousticness",
     "loved",
     "date_added",
     "last_played_at",
@@ -71,6 +77,8 @@ const TEXT_FIELDS: &[&str] = &[
     "composer",
     "comments",
     "grouping",
+    "mood",
+    "vibe_tags",
 ];
 
 const NUMERIC_FIELDS: &[&str] = &[
@@ -84,6 +92,10 @@ const NUMERIC_FIELDS: &[&str] = &[
     "play_count",
     "skip_count",
     "rating",
+    "energy",
+    "bpm",
+    "danceability",
+    "acousticness",
 ];
 
 const DATE_FIELDS: &[&str] = &["date_added", "last_played_at", "last_skipped_at"];
@@ -98,6 +110,9 @@ const ALLOWED_SORT_FIELDS: &[&str] = &[
     "play_count",
     "rating",
     "duration",
+    "energy",
+    "bpm",
+    "danceability",
 ];
 
 /// Map frontend field names to actual DB column names

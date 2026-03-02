@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import type { Track } from "../lib/types";
-import { getArtworkDataUrl } from "../lib/commands";
+import { getArtworkDataUrl, retagTracks, getTrackById } from "../lib/commands";
 import {
   formatDuration,
   formatDate,
@@ -55,16 +56,42 @@ export function TrackInfoModal({
   onNext,
 }: TrackInfoModalProps) {
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+  const [localTrack, setLocalTrack] = useState<Track>(track);
+  const [tagging, setTagging] = useState(false);
+
+  // Sync local track when the prop changes (e.g. prev/next navigation)
+  useEffect(() => {
+    setLocalTrack(track);
+    setTagging(false);
+  }, [track]);
 
   useEffect(() => {
-    if (track.artworkHash) {
-      getArtworkDataUrl(track.artworkHash)
+    if (localTrack.artworkHash) {
+      getArtworkDataUrl(localTrack.artworkHash)
         .then(setArtworkUrl)
         .catch(() => setArtworkUrl(null));
     } else {
       setArtworkUrl(null);
     }
-  }, [track.artworkHash]);
+  }, [localTrack.artworkHash]);
+
+  // Listen for tagging completion to refresh track data
+  useEffect(() => {
+    if (!tagging) return;
+    const unlisten = listen<{ done?: boolean }>("ai-tag-progress", async (event) => {
+      if (event.payload.done) {
+        const updated = await getTrackById(localTrack.id);
+        if (updated) setLocalTrack(updated);
+        setTagging(false);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [tagging, localTrack.id]);
+
+  const handleFetchAiTags = useCallback(() => {
+    setTagging(true);
+    retagTracks([localTrack.id]).catch(() => setTagging(false));
+  }, [localTrack.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -122,13 +149,13 @@ export function TrackInfoModal({
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-n-100 truncate">
-              {track.title}
+              {localTrack.title}
             </h2>
-            {track.artist && (
-              <p className="text-xs text-n-400 truncate">{track.artist}</p>
+            {localTrack.artist && (
+              <p className="text-xs text-n-400 truncate">{localTrack.artist}</p>
             )}
-            {track.album && (
-              <p className="text-xs text-n-500 truncate">{track.album}</p>
+            {localTrack.album && (
+              <p className="text-xs text-n-500 truncate">{localTrack.album}</p>
             )}
           </div>
           {/* Nav arrows */}
@@ -173,93 +200,124 @@ export function TrackInfoModal({
         {/* Body — scrollable */}
         <div className="px-4 py-2 flex-1 overflow-y-auto min-h-0">
           <Section title="Summary">
-            <InfoRow label="Title" value={track.title} />
-            <InfoRow label="Artist" value={track.artist} />
-            <InfoRow label="Album Artist" value={track.albumArtist} />
-            <InfoRow label="Album" value={track.album} />
-            <InfoRow label="Genre" value={track.genre} />
-            <InfoRow label="Year" value={track.year} />
-            <InfoRow label="Composer" value={track.composer} />
-            <InfoRow label="Grouping" value={track.grouping} />
-            <InfoRow label="Comments" value={track.comments} />
+            <InfoRow label="Title" value={localTrack.title} />
+            <InfoRow label="Artist" value={localTrack.artist} />
+            <InfoRow label="Album Artist" value={localTrack.albumArtist} />
+            <InfoRow label="Album" value={localTrack.album} />
+            <InfoRow label="Genre" value={localTrack.genre} />
+            <InfoRow label="Year" value={localTrack.year} />
+            <InfoRow label="Composer" value={localTrack.composer} />
+            <InfoRow label="Grouping" value={localTrack.grouping} />
+            <InfoRow label="Comments" value={localTrack.comments} />
           </Section>
 
           <Section title="Details">
-            <InfoRow label="Duration" value={formatDuration(track.duration)} />
+            <InfoRow label="Duration" value={formatDuration(localTrack.duration)} />
             <InfoRow
               label="Size"
-              value={track.size ? formatFileSize(track.size) : null}
+              value={localTrack.size ? formatFileSize(localTrack.size) : null}
             />
             <InfoRow
               label="Bit Rate"
-              value={track.bitRate ? `${track.bitRate} kbps` : null}
+              value={localTrack.bitRate ? `${localTrack.bitRate} kbps` : null}
             />
             <InfoRow
               label="Sample Rate"
               value={
-                track.sampleRate
-                  ? `${(track.sampleRate / 1000).toFixed(1)} kHz`
+                localTrack.sampleRate
+                  ? `${(localTrack.sampleRate / 1000).toFixed(1)} kHz`
                   : null
               }
             />
             <InfoRow
               label="Track"
               value={
-                track.trackNumber
-                  ? track.trackCount
-                    ? `${track.trackNumber} of ${track.trackCount}`
-                    : String(track.trackNumber)
+                localTrack.trackNumber
+                  ? localTrack.trackCount
+                    ? `${localTrack.trackNumber} of ${localTrack.trackCount}`
+                    : String(localTrack.trackNumber)
                   : null
               }
             />
             <InfoRow
               label="Disc"
               value={
-                track.discNumber
-                  ? track.discCount
-                    ? `${track.discNumber} of ${track.discCount}`
-                    : String(track.discNumber)
+                localTrack.discNumber
+                  ? localTrack.discCount
+                    ? `${localTrack.discNumber} of ${localTrack.discCount}`
+                    : String(localTrack.discNumber)
                   : null
               }
             />
           </Section>
 
           <Section title="Stats">
-            <InfoRow label="Play Count" value={track.playCount ?? 0} />
-            <InfoRow label="Skip Count" value={track.skipCount ?? 0} />
-            <InfoRow label="Rating" value={ratingStars(track.rating)} />
+            <InfoRow label="Play Count" value={localTrack.playCount ?? 0} />
+            <InfoRow label="Skip Count" value={localTrack.skipCount ?? 0} />
+            <InfoRow label="Rating" value={ratingStars(localTrack.rating)} />
             <InfoRow
               label="Loved"
               value={
-                track.loved != null ? (track.loved ? "Yes" : "No") : null
+                localTrack.loved != null ? (localTrack.loved ? "Yes" : "No") : null
               }
             />
-            <InfoRow label="Date Added" value={formatDate(track.dateAdded)} />
+            <InfoRow label="Date Added" value={formatDate(localTrack.dateAdded)} />
             <InfoRow
               label="Last Played"
-              value={formatDate(track.lastPlayedAt)}
+              value={formatDate(localTrack.lastPlayedAt)}
             />
             <InfoRow
               label="Last Skipped"
-              value={formatDate(track.lastSkippedAt)}
+              value={formatDate(localTrack.lastSkippedAt)}
             />
           </Section>
 
           <Section title="Sort Fields">
-            <InfoRow label="Sort Title" value={track.sortTitle} />
-            <InfoRow label="Sort Artist" value={track.sortArtist} />
-            <InfoRow label="Sort Album" value={track.sortAlbum} />
+            <InfoRow label="Sort Title" value={localTrack.sortTitle} />
+            <InfoRow label="Sort Artist" value={localTrack.sortArtist} />
+            <InfoRow label="Sort Album" value={localTrack.sortAlbum} />
             <InfoRow
               label="Sort Album Artist"
-              value={track.sortAlbumArtist}
+              value={localTrack.sortAlbumArtist}
             />
-            <InfoRow label="Sort Composer" value={track.sortComposer} />
+            <InfoRow label="Sort Composer" value={localTrack.sortComposer} />
+          </Section>
+
+          <Section title="AI Tags">
+            {localTrack.aiTaggedAt ? (
+              <>
+                <InfoRow label="Mood" value={localTrack.mood} />
+                <InfoRow label="Energy" value={localTrack.energy != null ? `${localTrack.energy}/10` : null} />
+                <InfoRow label="BPM" value={localTrack.bpm} />
+                <InfoRow label="Danceability" value={localTrack.danceability != null ? `${localTrack.danceability}/10` : null} />
+                <InfoRow label="Acousticness" value={localTrack.acousticness != null ? `${localTrack.acousticness}/10` : null} />
+                <InfoRow
+                  label="Vibe Tags"
+                  value={localTrack.vibeTags ? (() => {
+                    try { return (JSON.parse(localTrack.vibeTags) as string[]).join(", "); }
+                    catch { return localTrack.vibeTags; }
+                  })() : null}
+                />
+                <InfoRow label="Tagged At" value={formatDate(localTrack.aiTaggedAt)} />
+              </>
+            ) : (
+              <div className="flex items-center justify-between py-1">
+                <span className="text-xs text-n-500">Not yet analyzed</span>
+                <button
+                  onClick={handleFetchAiTags}
+                  disabled={tagging}
+                  className="px-3 py-1 text-[11px] rounded-md bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50"
+                >
+                  {tagging ? "Tagging..." : "Fetch AI Tags"}
+                </button>
+              </div>
+            )}
           </Section>
 
           <Section title="File">
-            <InfoRow label="File Path" value={track.filePath} />
-            <InfoRow label="Persistent ID" value={track.persistentId} />
-            <InfoRow label="Artwork Hash" value={track.artworkHash} />
+            <InfoRow label="File Path" value={localTrack.filePath} />
+            <InfoRow label="Persistent ID" value={localTrack.persistentId} />
+            <InfoRow label="Artwork Hash" value={localTrack.artworkHash} />
           </Section>
         </div>
 

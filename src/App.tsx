@@ -5,7 +5,9 @@ import { useNavigationStore } from "./stores/navigationStore";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useColumnBrowserStore, type BrowserColumn } from "./stores/columnBrowserStore";
-import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl, getUpcomingTracks, createPlaylist, createPlaylistFolder } from "./lib/commands";
+import { useActivityStore } from "./stores/activityStore";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl, getUpcomingTracks, createPlaylist, createPlaylistFolder, exportLibrary, exportAiTags, importAiTags, exportPlaylistM3u } from "./lib/commands";
 import { ImportProgress } from "./components/ImportProgress";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
@@ -112,7 +114,19 @@ function App() {
     useNavigationStore.getState().init();
     usePlaybackStore.getState().init();
     useAssistantStore.getState().init();
+    useActivityStore.getState().init();
   }, []);
+
+  // Reload tracks when a background task completes (artwork, ai-tagging)
+  useEffect(() => {
+    return useActivityStore.subscribe((s, prev) => {
+      if (s.lastCompletedTaskId && s.lastCompletedTaskId !== prev.lastCompletedTaskId) {
+        if (s.lastCompletedTaskId === "artwork" || s.lastCompletedTaskId === "ai-tagging") {
+          loadTracks();
+        }
+      }
+    });
+  }, [loadTracks]);
 
   // Listen for menu "Re-import Library", theme changes, and system media key events
   useEffect(() => {
@@ -122,12 +136,6 @@ function App() {
       listen<string>("theme-change", (event) => {
         const t = event.payload as "light" | "dark" | "system";
         useThemeStore.getState().setTheme(t);
-      }),
-      listen("artwork-updated", () => {
-        loadTracks();
-      }),
-      listen<{ done?: boolean }>("ai-tag-progress", (e) => {
-        if (e.payload.done) loadTracks();
       }),
       listen("media-toggle", () => usePlaybackStore.getState().togglePlayPause()),
       listen("media-play", () => {
@@ -248,6 +256,76 @@ function App() {
           useNavigationStore.getState().requestSidebarRefresh();
         } catch (err) {
           console.error("Failed to create playlist folder:", err);
+        }
+      }),
+      listen("menu-export-library", async () => {
+        const path = await save({
+          defaultPath: "untune_library.json",
+          filters: [{ name: "JSON", extensions: ["json"] }],
+        });
+        if (!path) return;
+        try {
+          const count = await exportLibrary(path);
+          console.log(`Exported ${count} tracks`);
+        } catch (err) {
+          console.error("Export library failed:", err);
+        }
+      }),
+      listen("menu-import-library-file", () => {
+        // Re-import from Apple Music (same as reimport)
+        handleImportRef.current();
+      }),
+      listen("menu-export-ai-tags", async () => {
+        const path = await save({
+          defaultPath: "ai_tags_backup.json",
+          filters: [{ name: "JSON", extensions: ["json"] }],
+        });
+        if (!path) return;
+        try {
+          const count = await exportAiTags(path);
+          console.log(`Exported ${count} AI tags`);
+        } catch (err) {
+          console.error("Export AI tags failed:", err);
+        }
+      }),
+      listen("menu-import-ai-tags", async () => {
+        const path = await open({
+          filters: [{ name: "JSON", extensions: ["json"] }],
+          multiple: false,
+        });
+        if (!path) return;
+        try {
+          const count = await importAiTags(path);
+          console.log(`Restored ${count} AI tags`);
+          loadTracks();
+        } catch (err) {
+          console.error("Import AI tags failed:", err);
+        }
+      }),
+      listen("menu-export-playlist-m3u", async () => {
+        const nav = useNavigationStore.getState();
+        let playlistId = nav.view === "playlist" ? nav.playlistId : null;
+        let playlistName = nav.view === "playlist" ? nav.playlistName : null;
+
+        if (playlistId == null) {
+          // No playlist selected — let user pick from available playlists
+          // Fall back: just show the save dialog and hope they pick one
+          // For now, alert if no playlist is active
+          console.warn("No playlist selected for M3U export");
+          return;
+        }
+
+        const safeName = (playlistName ?? "playlist").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const path = await save({
+          defaultPath: `${safeName}.m3u`,
+          filters: [{ name: "M3U Playlist", extensions: ["m3u"] }],
+        });
+        if (!path) return;
+        try {
+          await exportPlaylistM3u(playlistId, path);
+          console.log(`Exported playlist as M3U`);
+        } catch (err) {
+          console.error("Export playlist M3U failed:", err);
         }
       }),
     ];

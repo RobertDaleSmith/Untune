@@ -33,6 +33,13 @@ export interface Track {
   filePath: string | null;
   artworkHash: string | null;
   hasArtwork: boolean;
+  mood: string | null;
+  energy: number | null;
+  vibeTags: string | null;
+  bpm: number | null;
+  danceability: number | null;
+  acousticness: number | null;
+  aiTaggedAt: string | null;
 }
 
 export interface Playlist {

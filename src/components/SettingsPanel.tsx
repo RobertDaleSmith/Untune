@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { useThemeStore } from "../stores/themeStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useColumnBrowserStore } from "../stores/columnBrowserStore";
+import { useActivityStore } from "../stores/activityStore";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import {
   getPreference,
   setPreference,
   startAiTagging,
   cancelAiTagging,
   resetLibrary,
-  type AiTagProgress,
+  hasAssistantApiKey,
+  setAssistantApiKey,
+  exportAiTags,
+  importAiTags,
 } from "../lib/commands";
 
 interface SettingsPanelProps {
@@ -21,26 +25,25 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { crossfadeDuration, setCrossfadeDuration } = usePlaybackStore();
   const { visible: columnBrowserVisible, setVisible: setColumnBrowserVisible } = useColumnBrowserStore();
 
+  const aiTask = useActivityStore((s) => s.tasks["ai-tagging"]);
+  const aiTagging = aiTask != null && !aiTask.completedAt;
+  const aiProgress = aiTask ? { tagged: aiTask.current, total: aiTask.total } : null;
+
   const [aiAutoTag, setAiAutoTag] = useState(false);
   const [assistantTts, setAssistantTts] = useState(false);
-  const [aiTagging, setAiTagging] = useState(false);
-  const [aiProgress, setAiProgress] = useState<AiTagProgress | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeyEditing, setApiKeyEditing] = useState(false);
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const [tagBackupStatus, setTagBackupStatus] = useState<string | null>(null);
 
   useEffect(() => {
     getPreference("ai_auto_tag").then((v) => setAiAutoTag(v === "true"));
     getPreference("assistant_tts_enabled").then((v) => setAssistantTts(v === "true"));
-  }, []);
-
-  useEffect(() => {
-    const unlisten = listen<AiTagProgress & { done?: boolean }>("ai-tag-progress", (e) => {
-      setAiProgress({ tagged: e.payload.tagged, total: e.payload.total });
-      if (e.payload.done) {
-        setAiTagging(false);
-      }
-    });
-    return () => { unlisten.then((fn) => fn()); };
+    hasAssistantApiKey().then(setHasApiKey);
   }, []);
 
   const handleAutoTagToggle = useCallback((v: boolean) => {
@@ -48,20 +51,66 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     setPreference("ai_auto_tag", v ? "true" : "false");
   }, []);
 
+  const handleSaveApiKey = useCallback(async () => {
+    const trimmed = apiKeyInput.trim();
+    if (!trimmed) return;
+    if (!trimmed.startsWith("sk-ant-")) {
+      setApiKeyError("API key should start with sk-ant-");
+      return;
+    }
+    setApiKeySaving(true);
+    setApiKeyError(null);
+    try {
+      await setAssistantApiKey(trimmed);
+      setHasApiKey(true);
+      setApiKeyInput("");
+      setApiKeyEditing(false);
+    } catch (err) {
+      setApiKeyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setApiKeySaving(false);
+    }
+  }, [apiKeyInput]);
+
   const handleTtsToggle = useCallback((v: boolean) => {
     setAssistantTts(v);
     setPreference("assistant_tts_enabled", v ? "true" : "false");
   }, []);
 
   const handleTagAll = useCallback(() => {
-    setAiTagging(true);
-    setAiProgress(null);
     startAiTagging().catch(console.error);
   }, []);
 
   const handleCancelTag = useCallback(() => {
     cancelAiTagging().catch(console.error);
-    setAiTagging(false);
+  }, []);
+
+  const handleExportTags = useCallback(async () => {
+    const path = await save({
+      defaultPath: "ai_tags_backup.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!path) return;
+    try {
+      const count = await exportAiTags(path);
+      setTagBackupStatus(`Exported ${count.toLocaleString()} tags`);
+    } catch (err) {
+      setTagBackupStatus(`Export failed: ${err}`);
+    }
+  }, []);
+
+  const handleRestoreTags = useCallback(async () => {
+    const path = await open({
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      multiple: false,
+    });
+    if (!path) return;
+    try {
+      const count = await importAiTags(path);
+      setTagBackupStatus(`Restored ${count.toLocaleString()} tags`);
+    } catch (err) {
+      setTagBackupStatus(`Restore failed: ${err}`);
+    }
   }, []);
 
   const handleResetLibrary = useCallback(async () => {
@@ -177,6 +226,56 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <h3 className="text-[11px] font-medium text-n-500 uppercase tracking-wider mb-3">AI Features</h3>
 
           <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[13px] text-n-200">Anthropic API key</span>
+                  <p className="text-[11px] text-n-500">
+                    {hasApiKey ? "Key configured" : "Required for AI tagging, bios, and assistant"}
+                  </p>
+                </div>
+                {!apiKeyEditing && (
+                  <button
+                    onClick={() => setApiKeyEditing(true)}
+                    className="px-3 py-1 text-[11px] rounded-md bg-n-800 text-n-300 hover:text-n-100 hover:bg-n-700 transition-colors"
+                  >
+                    {hasApiKey ? "Update" : "Set Key"}
+                  </button>
+                )}
+              </div>
+              {apiKeyEditing && (
+                <div className="mt-2">
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveApiKey()}
+                    placeholder="sk-ant-..."
+                    autoFocus
+                    className="w-full bg-n-800 border border-n-700 rounded-lg px-3 py-1.5 text-[12px] text-n-200 placeholder-n-600 outline-none focus:border-n-500 transition-colors font-mono"
+                  />
+                  {apiKeyError && (
+                    <p className="text-red-400 text-[11px] mt-1">{apiKeyError}</p>
+                  )}
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      onClick={() => { setApiKeyEditing(false); setApiKeyInput(""); setApiKeyError(null); }}
+                      className="px-3 py-1 text-[11px] text-n-400 hover:text-n-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveApiKey}
+                      disabled={apiKeySaving || !apiKeyInput.trim()}
+                      className="px-3 py-1 text-[11px] rounded-md bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-40"
+                    >
+                      {apiKeySaving ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <SettingToggle
               label="Auto-tag after import"
               description="Analyze tracks with AI for mood, energy, BPM"
@@ -208,6 +307,29 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   Tag All
                 </button>
               )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[13px] text-n-200">Backup AI tags</span>
+                <p className="text-[11px] text-n-500">
+                  {tagBackupStatus || "Export or restore tags to/from a file"}
+                </p>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={handleExportTags}
+                  className="px-3 py-1 text-[11px] rounded-md bg-n-800 text-n-300 hover:text-n-100 hover:bg-n-700 transition-colors"
+                >
+                  Export
+                </button>
+                <button
+                  onClick={handleRestoreTags}
+                  className="px-3 py-1 text-[11px] rounded-md bg-n-800 text-n-300 hover:text-n-100 hover:bg-n-700 transition-colors"
+                >
+                  Restore
+                </button>
+              </div>
             </div>
 
             <SettingToggle

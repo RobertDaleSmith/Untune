@@ -23,7 +23,7 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "query_tracks",
-            "description": "Query tracks using structured filters. Supports text fields (title, artist, album, genre, composer), numeric fields (year, play_count, rating 1-5, duration in seconds), date fields (date_added, last_played_at), and boolean (loved). Operators: text: is, contains, starts_with; numeric: eq, gt, gte, lt, lte, between; date: in_last (days), before, after.",
+            "description": "Query tracks using structured filters. Supports text fields (title, artist, album, genre, composer, mood, vibe_tags), numeric fields (year, play_count, rating 1-5, duration in seconds, energy 1-10, bpm, danceability 1-10, acousticness 1-10), date fields (date_added, last_played_at), and boolean (loved). Operators: text: is, contains, starts_with; numeric: eq, gt, gte, lt, lte, between; date: in_last (days), before, after. Mood values: happy, sad, melancholy, aggressive, peaceful, romantic, mysterious, triumphant, nostalgic, playful, dark, uplifting, tense, dreamy, energetic, relaxed.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -148,6 +148,45 @@ pub fn tool_definitions() -> Vec<Value> {
                 "required": ["mode"]
             }
         }),
+        json!({
+            "name": "find_similar",
+            "description": "Find tracks similar to a given track based on genre, mood, energy, BPM, danceability, acousticness, and artist. Returns a mix of similar tracks for 'play something like this' requests.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "track_id": { "type": "integer", "description": "The seed track ID to find similar tracks for" },
+                    "limit": { "type": "integer", "description": "Max results (default 25)", "default": 25 }
+                },
+                "required": ["track_id"]
+            }
+        }),
+        json!({
+            "name": "create_smart_playlist",
+            "description": "Create a smart playlist with filter rules. Rules use the same format as query_tracks. Good for mood playlists, genre mixes, etc.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Playlist name" },
+                    "match_mode": { "type": "string", "enum": ["all", "any"], "default": "all" },
+                    "rules": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "field": { "type": "string" },
+                                "op": { "type": "string" },
+                                "value": {}
+                            },
+                            "required": ["field", "op"]
+                        }
+                    },
+                    "limit": { "type": "integer", "description": "Optional track limit" },
+                    "sort_by": { "type": "string", "description": "Sort field" },
+                    "sort_dir": { "type": "string", "enum": ["asc", "desc"] }
+                },
+                "required": ["name", "rules"]
+            }
+        }),
     ]
 }
 
@@ -171,6 +210,8 @@ pub fn execute(
         "play_playlist" => exec_play_playlist(input, conn, playback),
         "control_playback" => exec_control_playback(input, conn, playback),
         "create_playlist" => exec_create_playlist(input, conn),
+        "find_similar" => exec_find_similar(input, conn),
+        "create_smart_playlist" => exec_create_smart_playlist(input, conn),
         _ => Err(format!("Unknown tool: {}", tool_name)),
     };
 
@@ -181,7 +222,7 @@ pub fn execute(
     }
 
     // Notify frontend of playlist mutations
-    if tool_name == "create_playlist" && result.is_ok() {
+    if (tool_name == "create_playlist" || tool_name == "create_smart_playlist") && result.is_ok() {
         let _ = app.emit("assistant-playlist-changed", ());
     }
 
@@ -200,6 +241,8 @@ fn track_to_summary(t: &Track) -> Value {
         "playCount": t.play_count,
         "rating": t.rating.map(|r| r / 20), // 0-100 -> 0-5 stars
         "loved": t.loved,
+        "mood": t.mood,
+        "energy": t.energy,
     })
 }
 
@@ -559,6 +602,48 @@ fn exec_create_playlist(input: &Value, conn: &Connection) -> Result<Value, Strin
                 .map_err(|e| e.to_string())?;
         }
     }
+
+    Ok(json!({
+        "status": "created",
+        "playlistId": playlist_id,
+        "name": name,
+    }))
+}
+
+fn exec_find_similar(input: &Value, conn: &Connection) -> Result<Value, String> {
+    let track_id = input["track_id"].as_i64().ok_or("Missing track_id")?;
+    let limit = input["limit"].as_i64().unwrap_or(25);
+    let tracks = crate::db::similarity::find_similar_tracks(conn, track_id, limit, &[])
+        .map_err(|e| e.to_string())?;
+    let results: Vec<Value> = tracks.iter().map(track_to_summary).collect();
+    Ok(json!({ "count": results.len(), "tracks": results }))
+}
+
+fn exec_create_smart_playlist(input: &Value, conn: &Connection) -> Result<Value, String> {
+    let name = input["name"].as_str().ok_or("Missing playlist name")?;
+    let match_mode = input["match_mode"].as_str().unwrap_or("all");
+    let rules = input["rules"].as_array().ok_or("Missing rules")?;
+
+    let mut rules_obj = json!({
+        "match": match_mode,
+        "rules": rules,
+    });
+
+    // Add limit/sort if provided
+    let limit = input["limit"].as_i64();
+    let sort_by = input["sort_by"].as_str();
+    let sort_dir = input["sort_dir"].as_str().unwrap_or("desc");
+    if let Some(count) = limit {
+        rules_obj["limit"] = json!({
+            "count": count,
+            "sortBy": sort_by.unwrap_or("play_count"),
+            "sortDir": sort_dir,
+        });
+    }
+
+    let rules_json = rules_obj.to_string();
+    let playlist_id = db::insert_smart_playlist(conn, name, &rules_json, None)
+        .map_err(|e| e.to_string())?;
 
     Ok(json!({
         "status": "created",

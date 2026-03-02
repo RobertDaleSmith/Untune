@@ -5,6 +5,17 @@ use tauri::State;
 use crate::db::{self, Database};
 use crate::models::Track;
 
+#[tauri::command]
+pub fn export_library(db: State<'_, Database>, output_path: String) -> Result<u64, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let tracks = db::get_tracks(&conn, 0, 1_000_000, "id", "asc").map_err(|e| e.to_string())?;
+    let count = tracks.len() as u64;
+    let json = serde_json::to_string_pretty(&tracks).map_err(|e| e.to_string())?;
+    std::fs::write(&output_path, json).map_err(|e| e.to_string())?;
+    log::info!("Exported {} tracks to {}", count, output_path);
+    Ok(count)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackQuery {
@@ -12,6 +23,12 @@ pub struct TrackQuery {
     pub limit: Option<i64>,
     pub sort_column: Option<String>,
     pub sort_dir: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_track_by_id(db: State<'_, Database>, track_id: i64) -> Result<Option<Track>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    db::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

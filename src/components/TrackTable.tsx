@@ -17,7 +17,7 @@ import { StarRating } from "./StarRating";
 import { useNavigationStore } from "../stores/navigationStore";
 import { TrackInfoModal } from "./TrackInfoModal";
 import { ArtworkSearchModal } from "./ArtworkSearchModal";
-import { revealInFinder } from "../lib/commands";
+import { revealInFinder, playSimilar, startRadio } from "../lib/commands";
 
 const columnHelper = createColumnHelper<Track>();
 
@@ -98,6 +98,21 @@ const columns = [
         rating={info.getValue()}
       />
     ),
+  }),
+  columnHelper.accessor("mood", {
+    header: "Mood",
+    size: 90,
+    minSize: 50,
+    cell: (info) => info.getValue() ?? "",
+  }),
+  columnHelper.accessor("energy", {
+    header: "Energy",
+    size: 55,
+    minSize: 40,
+    cell: (info) => {
+      const v = info.getValue();
+      return v != null ? `${v}/10` : "";
+    },
   }),
 ];
 
@@ -649,6 +664,25 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                 Find Album Artwork...
               </button>
             )}
+            <div className="my-1 border-t border-n-700" />
+            <button
+              className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
+              onClick={() => {
+                playSimilar(track.id).catch(console.error);
+                setContextMenu(null);
+              }}
+            >
+              Play Similar
+            </button>
+            <button
+              className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
+              onClick={() => {
+                startRadio(track.id).catch(console.error);
+                setContextMenu(null);
+              }}
+            >
+              Start Radio
+            </button>
             {(track.album || track.artist) && (
               <>
                 <div className="my-1 border-t border-n-700" />

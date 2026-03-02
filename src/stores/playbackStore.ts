@@ -27,6 +27,8 @@ import {
   setSleepTimer as setSleepTimerCmd,
   cancelSleepTimer as cancelSleepTimerCmd,
   getSleepTimerRemaining,
+  getRadioState,
+  playSimilar,
 } from "../lib/commands";
 import type { AudioRoute, AudioDevice } from "../lib/commands";
 
@@ -296,6 +298,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         const trackId = await nextTrack();
         if (trackId != null) {
           set({ currentTrackId: trackId, position: 0, isPlaying: true });
+          // Radio auto-queue: when radio is on and queue is getting low, add more similar tracks
+          getRadioState().then((radio) => {
+            if (radio.enabled && radio.seedTrackId) {
+              getUpcomingTracks(5).then(({ nextTrackIds }) => {
+                if (nextTrackIds.length < 3) {
+                  playSimilar(radio.seedTrackId!).catch(() => {});
+                }
+              }).catch(() => {});
+            }
+          }).catch(() => {});
         } else {
           set({ isPlaying: false, currentTrackId: null, position: 0 });
           get().stopPolling();

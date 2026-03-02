@@ -1,6 +1,7 @@
 mod schema;
 mod queries;
 mod insert;
+pub mod similarity;
 
 pub use queries::*;
 pub use insert::*;

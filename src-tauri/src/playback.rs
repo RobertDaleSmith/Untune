@@ -126,6 +126,8 @@ pub struct PlaybackState {
     /// Old sink that's fading out during a crossfade. Kept alive until fade completes.
     crossfade_old_sink: Mutex<Option<CrossfadeOldSink>>,
     crossfade_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    radio_enabled: AtomicBool,
+    radio_seed_track_id: Mutex<Option<i64>>,
 }
 
 // SAFETY: All fields are behind Mutex locks, so access is serialized.
@@ -145,7 +147,32 @@ impl PlaybackState {
             crossfade_duration: Mutex::new(0.0),
             crossfade_old_sink: Mutex::new(None),
             crossfade_cancel: Mutex::new(None),
+            radio_enabled: AtomicBool::new(false),
+            radio_seed_track_id: Mutex::new(None),
         }
+    }
+
+    pub fn toggle_radio(&self) -> bool {
+        let was = self.radio_enabled.load(Ordering::Relaxed);
+        let now = !was;
+        self.radio_enabled.store(now, Ordering::Relaxed);
+        if !now {
+            *self.radio_seed_track_id.lock().unwrap() = None;
+        }
+        now
+    }
+
+    pub fn start_radio(&self, seed_id: i64) {
+        self.radio_enabled.store(true, Ordering::Relaxed);
+        *self.radio_seed_track_id.lock().unwrap() = Some(seed_id);
+    }
+
+    pub fn radio_enabled(&self) -> bool {
+        self.radio_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn radio_seed(&self) -> Option<i64> {
+        *self.radio_seed_track_id.lock().unwrap()
     }
 
     /// Ensure the shared audio output stream exists, creating it if needed.

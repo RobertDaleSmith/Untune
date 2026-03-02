@@ -1,5 +1,32 @@
 use rusqlite::Connection;
 
+fn migrate_ai_tags(conn: &Connection) {
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN mood TEXT");
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN energy INTEGER");
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN vibe_tags TEXT");
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN bpm INTEGER");
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN danceability INTEGER");
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN acousticness INTEGER");
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN ai_tagged_at TEXT");
+    let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_tracks_mood ON tracks(mood)");
+    let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_tracks_energy ON tracks(energy)");
+    let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks(bpm)");
+}
+
+fn migrate_bios(conn: &Connection) {
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS bios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_name TEXT NOT NULL,
+            entity_detail TEXT NOT NULL DEFAULT '',
+            bio TEXT NOT NULL,
+            generated_at TEXT NOT NULL,
+            UNIQUE(entity_type, entity_name, entity_detail)
+        )"
+    );
+}
+
 fn migrate_playlists(conn: &Connection) {
     // Add columns for playlist folders — ignore errors if they already exist
     let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN is_folder INTEGER DEFAULT 0");
@@ -109,5 +136,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         ",
     )?;
     migrate_playlists(conn);
+    migrate_ai_tags(conn);
+    migrate_bios(conn);
     Ok(())
 }

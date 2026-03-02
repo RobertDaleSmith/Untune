@@ -225,6 +225,21 @@ pub fn run() {
                             .accelerator("CmdOrCtrl+Shift+I")
                             .build(handle)?)
                         .separator()
+                        .item(&SubmenuBuilder::new(handle, "Export / Import")
+                            .item(&MenuItemBuilder::with_id("export-library", "Export Library...")
+                                .build(handle)?)
+                            .item(&MenuItemBuilder::with_id("import-library-file", "Import Library...")
+                                .build(handle)?)
+                            .separator()
+                            .item(&MenuItemBuilder::with_id("export-ai-tags", "Export AI Tags...")
+                                .build(handle)?)
+                            .item(&MenuItemBuilder::with_id("import-ai-tags", "Import AI Tags...")
+                                .build(handle)?)
+                            .separator()
+                            .item(&MenuItemBuilder::with_id("export-playlist-m3u", "Export Playlist as M3U...")
+                                .build(handle)?)
+                            .build()?)
+                        .separator()
                         .item(&PredefinedMenuItem::close_window(handle, None)?)
                         .build()?,
                     &SubmenuBuilder::new(handle, "Edit")
@@ -418,6 +433,11 @@ pub fn run() {
                 "new-playlist-from-selection" => { let _ = app.emit("menu-new-playlist-from-selection", ()); }
                 "new-smart-playlist" => { let _ = app.emit("menu-new-smart-playlist", ()); }
                 "new-playlist-folder" => { let _ = app.emit("menu-new-playlist-folder", ()); }
+                "export-library" => { let _ = app.emit("menu-export-library", ()); }
+                "import-library-file" => { let _ = app.emit("menu-import-library-file", ()); }
+                "export-ai-tags" => { let _ = app.emit("menu-export-ai-tags", ()); }
+                "import-ai-tags" => { let _ = app.emit("menu-import-ai-tags", ()); }
+                "export-playlist-m3u" => { let _ = app.emit("menu-export-playlist-m3u", ()); }
                 "toggle-mini-player" => { let _ = app.emit("toggle-mini-player", ()); }
                 "pb-toggle" => { let _ = app.emit("media-toggle", ()); }
                 "pb-goto" => { let _ = app.emit("media-goto-current", ()); }
@@ -507,6 +527,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::import::import_library,
             commands::import::reset_library,
+            commands::tracks::export_library,
+            commands::tracks::get_track_by_id,
             commands::tracks::get_tracks,
             commands::tracks::get_track_count,
             commands::tracks::search_tracks,
@@ -584,6 +606,8 @@ pub fn run() {
             commands::ai_tags::cancel_ai_tagging,
             commands::ai_tags::get_ai_tag_progress,
             commands::ai_tags::retag_tracks,
+            commands::ai_tags::export_ai_tags,
+            commands::ai_tags::import_ai_tags,
             commands::bios::get_bio,
             commands::playback::play_similar,
             commands::playback::toggle_radio_mode,

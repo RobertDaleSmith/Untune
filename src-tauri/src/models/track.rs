@@ -37,6 +37,13 @@ pub struct Track {
     pub file_path: Option<String>,
     pub artwork_hash: Option<String>,
     pub has_artwork: bool,
+    pub mood: Option<String>,
+    pub energy: Option<i32>,
+    pub vibe_tags: Option<String>,
+    pub bpm: Option<i32>,
+    pub danceability: Option<i32>,
+    pub acousticness: Option<i32>,
+    pub ai_tagged_at: Option<String>,
 }
 
 /// JXA bulk output: struct-of-arrays format (each field is a Vec)

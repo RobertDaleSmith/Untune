@@ -30,6 +30,12 @@ const FIELD_LABELS: Record<string, string> = {
   bit_rate: "Bit Rate",
   sample_rate: "Sample Rate",
   size: "Size",
+  mood: "Mood",
+  energy: "Energy",
+  bpm: "BPM",
+  danceability: "Danceability",
+  acousticness: "Acousticness",
+  vibe_tags: "Vibe Tags",
 };
 
 const FIELD_GROUPS: { label: string; fields: string[] }[] = [
@@ -61,6 +67,10 @@ const FIELD_GROUPS: { label: string; fields: string[] }[] = [
       "rating",
     ],
   },
+  {
+    label: "AI Tags",
+    fields: ["mood", "vibe_tags", "energy", "bpm", "danceability", "acousticness"],
+  },
   { label: "Date", fields: ["date_added", "last_played_at", "last_skipped_at"] },
   { label: "Boolean", fields: ["loved"] },
 ];
@@ -78,6 +88,8 @@ function getFieldType(field: string): FieldType {
       "composer",
       "comments",
       "grouping",
+      "mood",
+      "vibe_tags",
     ].includes(field)
   )
     return "text";
@@ -93,6 +105,10 @@ function getFieldType(field: string): FieldType {
       "play_count",
       "skip_count",
       "rating",
+      "energy",
+      "bpm",
+      "danceability",
+      "acousticness",
     ].includes(field)
   )
     return "numeric";

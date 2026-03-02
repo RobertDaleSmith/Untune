@@ -10,6 +10,7 @@ import {
   getAlbumTracks,
   getArtistTracks,
   getGenreTracks,
+  getBio,
 } from "../lib/commands";
 import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import { useArtwork } from "../hooks/useArtwork";
@@ -253,6 +254,20 @@ function AlbumDetailView({
   const year = tracks.find((t) => t.year)?.year;
   const genre = tracks.find((t) => t.genre)?.genre;
 
+  // Lazy-load bio
+  const [bio, setBio] = useState<string | null>(null);
+  const [bioLoading, setBioLoading] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
+
+  const loadBio = useCallback(() => {
+    if (bio || bioLoading) return;
+    setBioLoading(true);
+    getBio("album", title, subtitle ?? "")
+      .then((r) => setBio(r.bio))
+      .catch(() => setBio(null))
+      .finally(() => setBioLoading(false));
+  }, [bio, bioLoading, title, subtitle]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Album header */}
@@ -312,6 +327,40 @@ function AlbumDetailView({
           </div>
         </div>
       </div>
+
+      {/* Bio */}
+      {!loading && (
+        <div className="shrink-0 px-5">
+          {bio == null && !bioLoading && (
+            <button
+              onClick={loadBio}
+              className="text-[11px] text-n-500 hover:text-n-300 transition-colors mt-2"
+            >
+              Show album bio...
+            </button>
+          )}
+          {bioLoading && (
+            <p className="text-[11px] text-n-500 mt-2">Loading bio...</p>
+          )}
+          {bio && (
+            <div className="mt-2 mb-1">
+              <p
+                className={`text-[11px] text-n-400 leading-relaxed ${!bioExpanded ? "line-clamp-3" : ""}`}
+              >
+                {bio}
+              </p>
+              {bio.length > 200 && (
+                <button
+                  onClick={() => setBioExpanded((v) => !v)}
+                  className="text-[10px] text-n-500 hover:text-n-300 transition-colors mt-0.5"
+                >
+                  {bioExpanded ? "Show less" : "Show more"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Track list */}
       {!loading && <TrackTable tracks={tracks} source={source} />}

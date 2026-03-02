@@ -47,7 +47,13 @@ fn build_system_prompt(conn: &rusqlite::Connection, playback: &PlaybackState) ->
          Current playback: {}.\n\
          Be concise — 1-2 sentences. Users are listening to music.\n\
          Search first, then play. Never expose internal IDs to the user.\n\
-         Rating: 1-5 stars (stored 0-100 in DB, tools handle conversion). Duration in seconds. Dates ISO format.",
+         Rating: 1-5 stars (stored 0-100 in DB, tools handle conversion). Duration in seconds. Dates ISO format.\n\n\
+         AI Tags: tracks have mood, energy(1-10), bpm, danceability(1-10), acousticness(1-10), and vibe_tags.\n\
+         Mood values: happy, sad, melancholy, aggressive, peaceful, romantic, mysterious, triumphant, nostalgic, playful, dark, uplifting, tense, dreamy, energetic, relaxed.\n\
+         Natural language mappings: 'chill'→energy<4+mood:relaxed/peaceful, 'upbeat'→energy>6+mood:happy/energetic, \
+         'sad songs'→mood:sad/melancholy, 'workout music'→energy>7+danceability>6, 'study music'→energy<5+acousticness>5, \
+         'party'→danceability>7+energy>6, 'driving'→vibe_tags contains 'driving'.\n\
+         Use find_similar for 'play something like this' requests. Use create_smart_playlist for persistent mood/vibe collections.",
         track_count, album_count, artist_count, playback_state
     )
 }
@@ -208,6 +214,20 @@ pub async fn send_message(
     }
 
     let _ = app.emit("assistant-response-complete", &full_response);
+
+    // Auto-speak response if TTS is enabled
+    if !full_response.is_empty() {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let tts_enabled = db::get_preference(&conn, "assistant_tts_enabled")
+            .unwrap_or(None)
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        drop(conn);
+        if tts_enabled {
+            #[cfg(target_os = "macos")]
+            crate::speech::speak(&full_response);
+        }
+    }
 
     Ok(full_response)
 }

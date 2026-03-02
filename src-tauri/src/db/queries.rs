@@ -9,15 +9,17 @@ pub const TRACK_COLUMNS: &str =
      size, bit_rate, sample_rate, play_count, skip_count, rating, loved,
      date_added, last_played_at, last_skipped_at, comments, grouping_,
      sort_title, sort_artist, sort_album, sort_album_artist, sort_composer,
-     file_path, artwork_hash, has_artwork";
+     file_path, artwork_hash, has_artwork,
+     mood, energy, vibe_tags, bpm, danceability, acousticness, ai_tagged_at";
 
-const TRACK_COLUMNS_PREFIXED: &str =
+pub const TRACK_COLUMNS_PREFIXED: &str =
     "t.id, t.persistent_id, t.title, t.artist, t.album_artist, t.album, t.genre, t.composer,
      t.year, t.track_number, t.track_count, t.disc_number, t.disc_count, t.duration,
      t.size, t.bit_rate, t.sample_rate, t.play_count, t.skip_count, t.rating, t.loved,
      t.date_added, t.last_played_at, t.last_skipped_at, t.comments, t.grouping_,
      t.sort_title, t.sort_artist, t.sort_album, t.sort_album_artist, t.sort_composer,
-     t.file_path, t.artwork_hash, t.has_artwork";
+     t.file_path, t.artwork_hash, t.has_artwork,
+     t.mood, t.energy, t.vibe_tags, t.bpm, t.danceability, t.acousticness, t.ai_tagged_at";
 
 pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
     Ok(Track {
@@ -55,7 +57,20 @@ pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
         file_path: row.get(31)?,
         artwork_hash: row.get(32)?,
         has_artwork: row.get::<_, i32>(33)? != 0,
+        mood: row.get(34)?,
+        energy: row.get(35)?,
+        vibe_tags: row.get(36)?,
+        bpm: row.get(37)?,
+        danceability: row.get(38)?,
+        acousticness: row.get(39)?,
+        ai_tagged_at: row.get(40)?,
     })
+}
+
+pub fn get_track_by_id(conn: &Connection, track_id: i64) -> Result<Option<Track>, rusqlite::Error> {
+    let sql = format!("SELECT {} FROM tracks WHERE id = ?", TRACK_COLUMNS);
+    conn.query_row(&sql, params![track_id], |row| map_track_row(row))
+        .optional()
 }
 
 pub fn get_tracks(
@@ -81,6 +96,11 @@ pub fn get_tracks(
         "track_number",
         "skip_count",
         "bit_rate",
+        "mood",
+        "energy",
+        "bpm",
+        "danceability",
+        "acousticness",
     ];
     let col = if allowed_columns.contains(&sort_column) {
         sort_column

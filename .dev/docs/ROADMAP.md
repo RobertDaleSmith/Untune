@@ -1,4 +1,4 @@
-# Waves — Feature Roadmap
+# Untune — Feature Roadmap
 
 > Tracking future features and improvements. Roughly ordered by impact within each category.
 
@@ -6,17 +6,17 @@
 
 ## Playback Engine
 
-- [ ] **Crossfade** — configurable overlap (0–12s) between tracks with fade curves
-- [ ] **Gapless playback** — seamless album transitions with no silence gap
+- [x] **Crossfade** — configurable overlap (0–12s) between tracks with fade curves
+- [x] **Gapless playback** — seamless album transitions with no silence gap
 - [ ] **Equalizer** — 10-band parametric EQ with presets (flat, bass boost, vocal, etc.)
-- [ ] **Sleep timer** — fade out and stop after N minutes
+- [x] **Sleep timer** — fade out and stop after N minutes
 - [ ] **Crossfade preview** — audition crossfade settings from preferences
 
 ## Queue & Playback UX
 
-- [ ] **Play queue sidebar** — visible "up next" list, reorderable via drag
-- [ ] **Queue history** — see recently played tracks, click to go back
-- [ ] **Drag tracks to playlists** — drag from track table onto sidebar playlists
+- [x] **Play queue sidebar** — visible "up next" list, reorderable via drag
+- [x] **Queue history** — see recently played tracks, click to go back
+- [x] **Drag tracks to playlists** — drag from track table onto sidebar playlists
 - [ ] **Global hotkeys** — control playback when the app isn't focused (beyond media keys)
 
 ## Library & Metadata
@@ -25,14 +25,14 @@
 - [ ] **Batch tag editing** — select multiple tracks, edit shared fields at once
 - [ ] **Auto-tagging** — MusicBrainz lookup to fill in missing/incorrect metadata
 - [ ] **Duplicate detection** — find and manage duplicate tracks (by fingerprint, metadata, or file hash)
-- [ ] **Star rating from table** — click-to-rate directly in the track row (not just via context menu)
+- [x] **Star rating from table** — click-to-rate directly in the track row (not just via context menu)
 - [ ] **Watch folders** — detect new/changed/removed files and auto-update library
 
 ## Smart Views
 
-- [ ] **Recently added** — built-in smart view for tracks added in the last N days
-- [ ] **Recently played** — built-in smart view for recently played tracks
-- [ ] **Top played** — most played tracks over configurable time periods
+- [x] **Recently added** — built-in smart view for tracks added in the last N days
+- [x] **Recently played** — built-in smart view for recently played tracks
+- [x] **Top played** — most played tracks over configurable time periods
 - [ ] **Stats dashboard** — listening stats, top artists/albums/genres over time, listening hours per week/month
 
 ## Scrobbling & Social
@@ -43,16 +43,16 @@
 
 ## Import & Export
 
-- [ ] **Export playlists** — M3U / M3U8 export
-- [ ] **Import playlists** — M3U / M3U8 / PLS import
+- [x] **Export playlists** — M3U / M3U8 export
+- [x] **Import playlists** — M3U / M3U8 / PLS import
 - [ ] **Library re-sync** — detect changes in Apple Music and pull deltas
 - [ ] **Backup & restore** — export/import full library database
 
 ## Discoverability & Polish
 
-- [ ] **Keyboard shortcuts overlay** — press `?` to see all available shortcuts in a modal
+- [x] **Keyboard shortcuts overlay** — press `?` to see all available shortcuts in a modal
 - [ ] **Onboarding** — first-launch walkthrough highlighting key features
-- [ ] **Settings/preferences panel** — dedicated UI for all configurable options (currently spread across localStorage + DB prefs)
+- [x] **Settings/preferences panel** — dedicated UI for all configurable options
 - [ ] **Tooltip system** — consistent hover tooltips across all controls
 
 ## AI — Discovery & Recommendations
@@ -79,14 +79,14 @@
 - [ ] **BPM-matched transitions** — DJ-style smooth transitions between tracks with similar tempos
 - [ ] **Auto-normalize** — AI-informed loudness matching across tracks
 
-## AI — Voice Assistant ("Hey Waves")
+## AI — Voice Assistant ("Hey Untune")
 
-- [ ] **Voice input** — speech-to-text via Whisper (local whisper.cpp in Rust) or cloud API (Deepgram/AssemblyAI)
-- [ ] **Wake word detection** — "Hey Waves" always-listening trigger, or push-to-talk hotkey
-- [ ] **Conversational LLM brain** — Claude API with tool-use to query library DB, control playback, build playlists
+- [x] **Voice input** — speech-to-text via native macOS dictation
+- [ ] **Wake word detection** — "Hey Untune" always-listening trigger, or push-to-talk hotkey
+- [x] **Conversational LLM brain** — Claude API with tool-use to query library DB, control playback, build playlists
 - [ ] **Voice output** — text-to-speech via ElevenLabs / OpenAI TTS / Cartesia, streamed for low latency
-- [ ] **Music ducking** — auto-lower music volume while assistant speaks, restore after
-- [ ] **Conversational context** — remember recent exchanges within a session ("play more like that", "skip this one")
+- [x] **Music ducking** — auto-lower music volume while assistant speaks, restore after
+- [x] **Conversational context** — remember recent exchanges within a session ("play more like that", "skip this one")
 - [ ] **Latency target** — voice-in to voice-out in <2s (STT ~300ms → LLM streaming ~1s → TTS first chunk ~300ms)
 
 ## Future Platform Targets
@@ -97,4 +97,4 @@
 
 ---
 
-*Last updated: 2026-02-25*
+*Last updated: 2026-02-26*

@@ -2,7 +2,7 @@ use lofty::file::TaggedFileExt;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::path::Path;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::db::{self, Database};
 
@@ -36,11 +36,16 @@ pub fn extract_artwork_background(app: &AppHandle) -> Result<(), Box<dyn std::er
         log::info!("Apple Music artwork cache found");
     }
 
+    let total = tracks.len();
+    let _ = app.emit("artwork-progress", serde_json::json!({
+        "current": 0, "total": total, "done": false
+    }));
+
     let mut embedded_count = 0u32;
     let mut cache_count = 0u32;
     let mut folder_count = 0u32;
 
-    for (track_id, persistent_id, file_path, _has_artwork) in &tracks {
+    for (idx, (track_id, persistent_id, file_path, _has_artwork)) in tracks.iter().enumerate() {
         // 1. Try embedded artwork (if file exists)
         let hash = file_path
             .as_deref()
@@ -74,6 +79,12 @@ pub fn extract_artwork_background(app: &AppHandle) -> Result<(), Box<dyn std::er
                 folder_count += 1;
             }
         }
+
+        if (idx + 1) % 50 == 0 || idx + 1 == total {
+            let _ = app.emit("artwork-progress", serde_json::json!({
+                "current": idx + 1, "total": total, "done": false
+            }));
+        }
     }
 
     log::info!(
@@ -82,6 +93,11 @@ pub fn extract_artwork_background(app: &AppHandle) -> Result<(), Box<dyn std::er
         cache_count,
         folder_count
     );
+
+    let _ = app.emit("artwork-progress", serde_json::json!({
+        "current": total, "total": total, "done": true
+    }));
+
     Ok(())
 }
 

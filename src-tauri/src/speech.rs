@@ -2,12 +2,29 @@
 #![allow(unexpected_cfgs)]
 
 use cocoa::base::{id, nil, BOOL, YES};
+use cocoa::foundation::NSString;
 use objc::{class, msg_send, sel, sel_impl};
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
+/// Wrapper around `id` so it can be stored in a static.
+struct SendId(id);
+unsafe impl Send for SendId {}
+
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+static SYNTHESIZER: OnceLock<Mutex<SendId>> = OnceLock::new();
+
+fn synth_lock() -> &'static Mutex<SendId> {
+    SYNTHESIZER.get_or_init(|| {
+        unsafe {
+            let cls = class!(NSSpeechSynthesizer);
+            let synth: id = msg_send![cls, alloc];
+            let synth: id = msg_send![synth, init];
+            Mutex::new(SendId(synth))
+        }
+    })
+}
 
 struct SpeechSession {
     engine: id,
@@ -239,5 +256,32 @@ pub fn stop_recognition() -> Result<(), String> {
             let _: () = msg_send![session.task, cancel];
         }
         Ok(())
+    }
+}
+
+// --- TTS (Text-to-Speech) via NSSpeechSynthesizer ---
+
+pub fn speak(text: &str) {
+    unsafe {
+        if let Ok(synth) = synth_lock().lock() {
+            let ns_string: id = NSString::alloc(nil).init_str(text);
+            let _: BOOL = msg_send![synth.0, startSpeakingString: ns_string];
+        }
+    }
+}
+
+pub fn stop_speak() -> Result<(), String> {
+    unsafe {
+        let synth = synth_lock().lock().map_err(|e| e.to_string())?;
+        let _: () = msg_send![synth.0, stopSpeaking];
+        Ok(())
+    }
+}
+
+pub fn speaking() -> bool {
+    unsafe {
+        let synth = synth_lock().lock().unwrap();
+        let is_speaking: BOOL = msg_send![synth.0, isSpeaking];
+        is_speaking == YES
     }
 }

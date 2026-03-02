@@ -43,3 +43,42 @@ pub fn stop_speech_recognition() -> Result<(), String> {
 pub fn stop_speech_recognition() -> Result<(), String> {
     Ok(())
 }
+
+// --- TTS ---
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn speak_text(text: String) -> Result<(), String> {
+    crate::speech::speak(&text);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn speak_text(_text: String) -> Result<(), String> {
+    Err("TTS not available on this platform".into())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn stop_speaking() -> Result<(), String> {
+    crate::speech::stop_speak()
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn stop_speaking() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn is_speaking() -> bool {
+    crate::speech::speaking()
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn is_speaking() -> bool {
+    false
+}

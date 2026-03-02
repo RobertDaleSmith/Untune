@@ -5,6 +5,8 @@ import { useNavigationStore } from "../stores/navigationStore";
 import { formatDuration } from "../utils/formatters";
 import { SearchBar } from "./SearchBar";
 import { AssistantButton } from "./AssistantButton";
+import { ActivityIndicator } from "./ActivityIndicator";
+import { toggleRadioMode, getRadioState } from "../lib/commands";
 import type { Track } from "../lib/types";
 
 function MarqueeText({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -117,6 +119,12 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
   const sleepMenuRef = useRef<HTMLDivElement>(null);
   const sleepBtnRef = useRef<HTMLButtonElement>(null);
   const [sleepMenuPos, setSleepMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [radioEnabled, setRadioEnabled] = useState(false);
+
+  // Load initial radio state
+  useEffect(() => {
+    getRadioState().then((s) => setRadioEnabled(s.enabled)).catch(() => {});
+  }, []);
 
   const currentTrack = currentTrackId
     ? tracks.find((t) => t.id === currentTrackId)
@@ -317,6 +325,22 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                 <span className="absolute -top-1.5 -right-1.5 text-[8px] font-bold leading-none">1</span>
               )}
             </button>
+            <button
+              onClick={() => {
+                toggleRadioMode()
+                  .then((s) => setRadioEnabled(s.enabled))
+                  .catch(console.error);
+              }}
+              className={`p-1.5 transition-colors hidden sm:block ${radioEnabled ? "text-accent" : "text-n-500 hover:text-n-200"}`}
+              title={radioEnabled ? "Radio on" : "Radio off"}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8a5 5 0 0 1 10 0" />
+                <path d="M5 8a3 3 0 0 1 6 0" />
+                <circle cx="8" cy="8" r="1" fill="currentColor" />
+                <path d="M8 9v4" />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -482,6 +506,9 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                     <path d="M4 6h16M4 12h12M4 18h8M19 14v6M16 17h6" />
                   </svg>
                 </button>
+              </div>
+              <div className="relative hidden sm:block">
+                <ActivityIndicator />
               </div>
               <div className="relative hidden sm:block">
                 <AssistantButton />
