@@ -16,6 +16,7 @@ mod smart_playlists;
 mod speech;
 
 use assistant::state::AssistantState;
+use commands::ai_tags::AiTaggingState;
 use db::Database;
 use media::MediaControlsState;
 use playback::{PlaybackState, RepeatMode};
@@ -120,6 +121,7 @@ pub fn run() {
             app.manage(db);
             app.manage(PlaybackState::new());
             app.manage(assistant);
+            app.manage(AiTaggingState::new());
 
             // Set window/dock icon
             if let Some(window) = app.get_webview_window("main") {
@@ -504,6 +506,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::import::import_library,
+            commands::import::reset_library,
             commands::tracks::get_tracks,
             commands::tracks::get_track_count,
             commands::tracks::search_tracks,
@@ -577,6 +580,18 @@ pub fn run() {
             commands::speech::request_speech_permission,
             commands::speech::start_speech_recognition,
             commands::speech::stop_speech_recognition,
+            commands::ai_tags::start_ai_tagging,
+            commands::ai_tags::cancel_ai_tagging,
+            commands::ai_tags::get_ai_tag_progress,
+            commands::ai_tags::retag_tracks,
+            commands::bios::get_bio,
+            commands::playback::play_similar,
+            commands::playback::toggle_radio_mode,
+            commands::playback::start_radio,
+            commands::playback::get_radio_state,
+            commands::speech::speak_text,
+            commands::speech::stop_speaking,
+            commands::speech::is_speaking,
             set_traffic_lights_visible,
         ])
         .run(tauri::generate_context!())

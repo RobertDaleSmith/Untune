@@ -126,6 +126,9 @@ function App() {
       listen("artwork-updated", () => {
         loadTracks();
       }),
+      listen<{ done?: boolean }>("ai-tag-progress", (e) => {
+        if (e.payload.done) loadTracks();
+      }),
       listen("media-toggle", () => usePlaybackStore.getState().togglePlayPause()),
       listen("media-play", () => {
         const s = usePlaybackStore.getState();
@@ -499,7 +502,6 @@ function App() {
   }, []);
 
   const isDarkSystem = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const splashBg = isDarkSystem ? "#010101" : "#fefefe";
 
   // Loading splash — the HTML #initial-loader stays visible until we dismiss it
   const showSplash = isLoading || (tracksLoading && tracks.length === 0);
@@ -507,10 +509,15 @@ function App() {
   useEffect(() => {
     const loader = document.getElementById("initial-loader");
     if (!loader) return;
-    if (!showSplash) {
+    if (!showSplash && isImported) {
+      // Library loaded — remove the loader entirely
       loader.remove();
+    } else if (!showSplash && !isImported) {
+      // Welcome/import screen — hide spinner but keep starfield + logo
+      const spinner = loader.querySelector('.spinner') as HTMLElement;
+      if (spinner) spinner.style.display = 'none';
     }
-  }, [showSplash]);
+  }, [showSplash, isImported]);
 
   if (showSplash) {
     return null;
@@ -518,11 +525,11 @@ function App() {
 
   if (!isImported && !isImporting) {
     return (
-      <div className="h-screen flex flex-col" style={{ background: splashBg }}>
+      <div className="fixed inset-0 z-[10000] flex flex-col">
         {/* Title bar drag region */}
         <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
 
-        <div className="flex-1" />
+        <div className="flex-1" data-tauri-drag-region onMouseDown={onDrag} />
 
         {/* Import controls */}
         <div className="flex-shrink-0 pb-12 pt-2 flex flex-col items-center gap-3">
@@ -552,7 +559,7 @@ function App() {
 
   if (!isImported && isImporting) {
     return (
-      <div data-tauri-drag-region onMouseDown={onDrag} className="h-screen bg-n-950 text-n-100 flex flex-col">
+      <div data-tauri-drag-region onMouseDown={onDrag} className="fixed inset-0 z-[10000] text-n-100 flex flex-col">
         <ImportProgress onComplete={handleImportComplete} mode="initial" />
       </div>
     );

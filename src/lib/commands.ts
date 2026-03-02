@@ -16,6 +16,10 @@ export async function importLibrary(): Promise<ImportStats> {
   return invoke<ImportStats>("import_library");
 }
 
+export async function resetLibrary(): Promise<void> {
+  return invoke("reset_library");
+}
+
 export async function getTracks(query: TrackQuery): Promise<Track[]> {
   return invoke<Track[]>("get_tracks", { query });
 }
@@ -421,4 +425,80 @@ export async function startSpeechRecognition(): Promise<void> {
 
 export async function stopSpeechRecognition(): Promise<void> {
   return invoke("stop_speech_recognition");
+}
+
+// --- AI Tagging ---
+
+export async function startAiTagging(): Promise<void> {
+  return invoke("start_ai_tagging");
+}
+
+export async function cancelAiTagging(): Promise<void> {
+  return invoke("cancel_ai_tagging");
+}
+
+export interface AiTagProgress {
+  tagged: number;
+  total: number;
+}
+
+export async function getAiTagProgress(): Promise<AiTagProgress> {
+  return invoke<AiTagProgress>("get_ai_tag_progress");
+}
+
+export async function retagTracks(trackIds: number[]): Promise<void> {
+  return invoke("retag_tracks", { trackIds });
+}
+
+// --- Bios ---
+
+export interface BioResult {
+  bio: string;
+  generatedAt: string;
+  cached: boolean;
+}
+
+export async function getBio(
+  entityType: string,
+  entityName: string,
+  entityDetail?: string,
+): Promise<BioResult> {
+  return invoke<BioResult>("get_bio", { entityType, entityName, entityDetail });
+}
+
+// --- Play Similar / Radio ---
+
+export async function playSimilar(trackId: number): Promise<number> {
+  return invoke<number>("play_similar", { trackId });
+}
+
+export interface RadioState {
+  enabled: boolean;
+  seedTrackId: number | null;
+}
+
+export async function toggleRadioMode(): Promise<RadioState> {
+  return invoke<RadioState>("toggle_radio_mode");
+}
+
+export async function startRadio(trackId: number): Promise<RadioState> {
+  return invoke<RadioState>("start_radio", { trackId });
+}
+
+export async function getRadioState(): Promise<RadioState> {
+  return invoke<RadioState>("get_radio_state");
+}
+
+// --- TTS ---
+
+export async function speakText(text: string): Promise<void> {
+  return invoke("speak_text", { text });
+}
+
+export async function stopSpeaking(): Promise<void> {
+  return invoke("stop_speaking");
+}
+
+export async function isSpeaking(): Promise<boolean> {
+  return invoke<boolean>("is_speaking");
 }

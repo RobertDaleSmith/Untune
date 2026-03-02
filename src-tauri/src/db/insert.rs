@@ -227,6 +227,19 @@ pub fn insert_playlist_folder(
     Ok(conn.last_insert_rowid())
 }
 
+pub fn reset_library(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "DELETE FROM playlist_tracks;
+         DELETE FROM playlists;
+         DELETE FROM tracks;
+         DELETE FROM tracks_fts;
+         DELETE FROM view_settings;
+         DELETE FROM lyrics_cache;
+         DELETE FROM bios;",
+    )?;
+    Ok(())
+}
+
 pub fn add_tracks_to_playlist(
     conn: &Connection,
     playlist_id: i64,
