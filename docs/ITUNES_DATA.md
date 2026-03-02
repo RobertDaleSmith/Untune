@@ -159,7 +159,7 @@ Key data from file tags that JXA may not expose:
 1. Extract embedded art from audio files via lofty-rs (most reliable, comprehensive)
 2. AMP artwork cache as second source (investigate hash mapping)
 3. Folder artwork (`cover.jpg`, etc.) as last resort only
-4. Cache all resolved artwork as `{persistent_id}.jpg` in Wavvy's own artwork directory
+4. Cache all resolved artwork as `{persistent_id}.jpg` in Untune's own artwork directory
 
 ## Data Flow Summary
 

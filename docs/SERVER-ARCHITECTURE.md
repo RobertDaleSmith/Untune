@@ -1,6 +1,6 @@
-# Waves Server & Multi-Client Architecture
+# Untune Server & Multi-Client Architecture
 
-> Planning doc for evolving Waves from a standalone desktop app into a self-hosted server + multi-client ecosystem for digital music collectors.
+> Planning doc for evolving Untune from a standalone desktop app into a self-hosted server + multi-client ecosystem for digital music collectors.
 
 ---
 
@@ -21,7 +21,7 @@ A free, cloudless, self-hosted music system where collectors own their infrastru
 
 ```
                           ┌─────────────────────┐
-                          │   waves-server       │
+                          │   untune-server       │
                           │   (NAS / dedicated)  │
                           │                      │
                           │  ┌────────────────┐  │
@@ -38,7 +38,7 @@ A free, cloudless, self-hosted music system where collectors own their infrastru
                     ┌────────────┘       └────────────┐
                     │                                  │
           ┌─────────▼──────────┐            ┌──────────▼─────────┐
-          │  waves-desktop     │            │  waves-mobile      │
+          │  untune-desktop     │            │  untune-mobile      │
           │  (Tauri app)       │            │  (iOS/Android)     │
           │                    │            │                    │
           │  Modes:            │            │  Always connects   │
@@ -52,7 +52,7 @@ A free, cloudless, self-hosted music system where collectors own their infrastru
 
 ## Apps & Repos
 
-### `waves-core` (shared Rust crate)
+### `untune-core` (shared Rust crate)
 
 Library crate used by both server and desktop. Contains everything that isn't I/O-specific:
 
@@ -66,7 +66,7 @@ Library crate used by both server and desktop. Contains everything that isn't I/
 
 This is extracted from the current `src-tauri/src/` codebase. Most of `db/`, `models/`, `smart_playlists.rs`, and the metadata parts of `import/` move here.
 
-### `waves-server` (headless Rust binary)
+### `untune-server` (headless Rust binary)
 
 Runs on a NAS, dedicated machine, or alongside the desktop app. No GUI.
 
@@ -80,9 +80,9 @@ Runs on a NAS, dedicated machine, or alongside the desktop app. No GUI.
 - **File backup** — temp copies of files before metadata changes (configurable)
 - **Transcoding** (future) — on-the-fly transcode for bandwidth-constrained clients
 
-### `waves-desktop` (Tauri app — current repo, evolved)
+### `untune-desktop` (Tauri app — current repo, evolved)
 
-The current Waves app with three operating modes:
+The current Untune app with three operating modes:
 
 | Mode | Audio Files | Database | Use Case |
 |------|-------------|----------|----------|
@@ -92,7 +92,7 @@ The current Waves app with three operating modes:
 
 In hybrid mode, the desktop is the initial source of truth. On first sync, the entire library (metadata + files) mirrors to the server. After that, edits on either side sync bidirectionally.
 
-### `waves-mobile` (future)
+### `untune-mobile` (future)
 
 - Always connects to a server (no standalone mode)
 - Stream audio, browse library, manage playlists
@@ -276,7 +276,7 @@ Because tag writing modifies the file, we need a safety net until the feature is
 **Backup behavior (server-configurable):**
 
 ```yaml
-# waves-server config
+# untune-server config
 metadata_writeback:
   enabled: true
   backup:
@@ -478,7 +478,7 @@ Recommendation: **React Native** with `react-native-track-player` for audio. It 
 
 ### Local Network
 
-- **mDNS / Bonjour** — server advertises `_waves._tcp` on LAN
+- **mDNS / Bonjour** — server advertises `_untune._tcp` on LAN
 - Desktop/mobile auto-discover servers on the same network
 - Zero configuration for home use
 
@@ -500,7 +500,7 @@ The server binds to `0.0.0.0:8484` (or configured port) and serves HTTPS if cert
 The server runs as a single binary with a config file:
 
 ```yaml
-# ~/.config/waves-server/config.yaml  (or /etc/waves-server/config.yaml)
+# ~/.config/untune-server/config.yaml  (or /etc/untune-server/config.yaml)
 
 server:
   host: "0.0.0.0"
@@ -523,8 +523,8 @@ metadata_writeback:
     max_size_gb: 50
 
 storage:
-  database: "/var/lib/waves-server/library.db"
-  artwork_cache: "/var/lib/waves-server/artwork"
+  database: "/var/lib/untune-server/library.db"
+  artwork_cache: "/var/lib/untune-server/artwork"
 
 # transcoding:                     # Future
 #   enabled: false
@@ -543,12 +543,12 @@ tls:
 
 ### Phase 0: Prepare the Monorepo (workspace)
 
-- Convert repo to Cargo workspace: `waves-core`, `waves-desktop`, `waves-server`
-- Extract shared code from `src-tauri/src/` into `waves-core`
-- Desktop app depends on `waves-core` — everything still works as before
+- Convert repo to Cargo workspace: `untune-core`, `untune-desktop`, `untune-server`
+- Extract shared code from `src-tauri/src/` into `untune-core`
+- Desktop app depends on `untune-core` — everything still works as before
 - No user-facing changes
 
-### Phase 1: waves-server MVP
+### Phase 1: untune-server MVP
 
 - Axum HTTP server binary
 - Library scanning (directory walk + lofty metadata extraction — no JXA)
@@ -634,7 +634,7 @@ tls:
 
 4. **Desktop app: keep Tauri or move to a web client?** — Tauri keeps the native feel and local-only mode. But a web client means any browser works. Could support both (server serves web UI, desktop stays Tauri).
 
-5. **Database: SQLite everywhere or PostgreSQL for server?** — SQLite is simpler, works great for single-server use, and keeps `waves-core` consistent. PostgreSQL only needed at serious scale (100k+ tracks, many concurrent users). Recommend: SQLite.
+5. **Database: SQLite everywhere or PostgreSQL for server?** — SQLite is simpler, works great for single-server use, and keeps `untune-core` consistent. PostgreSQL only needed at serious scale (100k+ tracks, many concurrent users). Recommend: SQLite.
 
 6. **How to handle very large libraries for initial sync?** — 62k tracks, some FLAC, could be 500GB+. Need resumable uploads, progress tracking, and the ability to sync metadata first (fast) then files in the background over days.
 

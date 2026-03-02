@@ -17,7 +17,7 @@
 - Artwork fallback pipeline: embedded metadata → Apple Music cache → folder artwork
 - Per-view shuffle/repeat persistence across app restarts
 - Right-click context menu, auto-scroll to now playing, keyboard navigation
-- Renamed from Wavvy to Waves with new icons
+- Renamed from Untune to Untune with new icons
 
 ## Playlist folder hierarchy (`4b4c512`)
 - Extract folder structure from Music app via JXA

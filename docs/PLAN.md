@@ -1,4 +1,4 @@
-# Wavvy - Project Plan
+# Untune - Project Plan
 
 > A fast, dense, cross-platform music player that liberates your iTunes library.
 
@@ -33,7 +33,7 @@ Replace iTunes/Apple Music as the primary music player with an app that:
 ### Backend: Rust
 - **Tauri v2** — desktop shell (macOS/Windows/Linux) + future mobile (iOS/Android)
 - **Axum** — HTTP server for web mode (serve the same UI in a browser)
-- **rusqlite** — local SQLite database (Wavvy's own indexed copy of library metadata)
+- **rusqlite** — local SQLite database (Untune's own indexed copy of library metadata)
 - **lofty-rs** — parse audio file metadata (ID3v2, MP4/M4A tags, FLAC, etc.)
 - **serde** — serialization for all data transfer
 
@@ -279,7 +279,7 @@ CREATE INDEX idx_tracks_rating ON tracks(rating DESC);
    - Skip this source initially and rely on embedded + folder artwork
    - Reverse-engineer the hash scheme later
 
-3. **Real-time sync with Music app**: Should Wavvy watch for changes?
+3. **Real-time sync with Music app**: Should Untune watch for changes?
    - Could periodically re-run JXA extraction for delta updates
    - Or treat the initial import as a one-time fork
 
