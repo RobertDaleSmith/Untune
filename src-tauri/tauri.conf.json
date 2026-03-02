@@ -38,6 +38,11 @@
     ],
     "resources": {
       "scripts/*": "scripts/"
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "entitlements": null,
+      "minimumSystemVersion": "13.0"
     }
   }
 }
