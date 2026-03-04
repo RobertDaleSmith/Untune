@@ -85,8 +85,8 @@ pub fn insert_playlist(
     rules_json: Option<&str>,
 ) -> Result<i64, rusqlite::Error> {
     conn.execute(
-        "INSERT INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "INSERT INTO playlists (persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
          ON CONFLICT(persistent_id) DO UPDATE SET
            name = excluded.name,
            is_smart = excluded.is_smart,
@@ -94,7 +94,8 @@ pub fn insert_playlist(
            parent_id = excluded.parent_id,
            sort_order = excluded.sort_order,
            track_count = excluded.track_count,
-           rules_json = excluded.rules_json",
+           rules_json = excluded.rules_json,
+           updated_at = datetime('now')",
         rusqlite::params![persistent_id, name, is_smart as i32, is_folder as i32, parent_id, sort_order, track_count, rules_json],
     )?;
     // ON CONFLICT DO UPDATE doesn't reliably set last_insert_rowid for updates,
@@ -175,7 +176,7 @@ pub fn update_smart_playlist(
 
 pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE playlists SET name = ? WHERE id = ?",
+        "UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?",
         rusqlite::params![name, id],
     )?;
     Ok(())
@@ -266,7 +267,7 @@ pub fn add_tracks_to_playlist(
         |row| row.get(0),
     )?;
     conn.execute(
-        "UPDATE playlists SET track_count = ? WHERE id = ?",
+        "UPDATE playlists SET track_count = ?, updated_at = datetime('now') WHERE id = ?",
         rusqlite::params![count, playlist_id],
     )?;
 

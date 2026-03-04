@@ -12,6 +12,7 @@ pub mod media;
 mod models;
 mod playback;
 mod smart_playlists;
+mod sync;
 #[cfg(target_os = "macos")]
 mod speech;
 
@@ -122,6 +123,7 @@ pub fn run() {
             app.manage(PlaybackState::new());
             app.manage(assistant);
             app.manage(AiTaggingState::new());
+            app.manage(Mutex::new(sync::SyncServer::new()));
 
             // Set window/dock icon
             if let Some(window) = app.get_webview_window("main") {
@@ -612,6 +614,12 @@ pub fn run() {
             commands::speech::speak_text,
             commands::speech::stop_speaking,
             commands::speech::is_speaking,
+            commands::sync::start_sync_server,
+            commands::sync::stop_sync_server,
+            commands::sync::generate_pairing_code,
+            commands::sync::get_sync_status,
+            commands::sync::unpair_device,
+            commands::sync::set_sync_playlists,
             set_traffic_lights_visible,
         ])
         .run(tauri::generate_context!())

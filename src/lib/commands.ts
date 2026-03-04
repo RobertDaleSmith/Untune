@@ -518,3 +518,29 @@ export async function stopSpeaking(): Promise<void> {
 export async function isSpeaking(): Promise<boolean> {
   return invoke<boolean>("is_speaking");
 }
+
+// --- Sync ---
+
+export async function startSyncServer(): Promise<void> {
+  return invoke("start_sync_server");
+}
+
+export async function stopSyncServer(): Promise<void> {
+  return invoke("stop_sync_server");
+}
+
+export async function generatePairingCode(): Promise<string> {
+  return invoke<string>("generate_pairing_code");
+}
+
+export async function getSyncStatus(): Promise<import("./types").SyncStatus> {
+  return invoke<import("./types").SyncStatus>("get_sync_status");
+}
+
+export async function unpairDevice(deviceId: string): Promise<void> {
+  return invoke("unpair_device", { deviceId });
+}
+
+export async function setSyncPlaylists(deviceId: string, playlistIds: number[]): Promise<void> {
+  return invoke("set_sync_playlists", { deviceId, playlistIds });
+}

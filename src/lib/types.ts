@@ -152,3 +152,19 @@ export interface SpeechTranscript {
   text: string;
   isFinal: boolean;
 }
+
+// --- Sync ---
+
+export interface SyncDeviceInfo {
+  id: string;
+  name: string;
+  pairedAt: string;
+  lastSyncAt: string | null;
+}
+
+export interface SyncStatus {
+  running: boolean;
+  pairingCode: string | null;
+  devices: SyncDeviceInfo[];
+  selectedPlaylists: number[];
+}

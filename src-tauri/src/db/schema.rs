@@ -35,6 +35,44 @@ fn migrate_playlists(conn: &Connection) {
     let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN rules_json TEXT");
 }
 
+fn migrate_sync(conn: &Connection) {
+    // Add updated_at to tracks and playlists
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN updated_at TEXT");
+    let _ = conn.execute_batch("ALTER TABLE playlists ADD COLUMN updated_at TEXT");
+
+    // Sync device management
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_devices (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            pairing_token TEXT NOT NULL,
+            paired_at TEXT NOT NULL,
+            last_sync_at TEXT
+        )"
+    );
+
+    // Which playlists are selected for sync per device
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_playlist_selections (
+            device_id TEXT NOT NULL REFERENCES sync_devices(id) ON DELETE CASCADE,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            PRIMARY KEY (device_id, playlist_id)
+        )"
+    );
+
+    // Track-level sync state per device
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_track_state (
+            device_id TEXT NOT NULL REFERENCES sync_devices(id) ON DELETE CASCADE,
+            track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            metadata_synced_at TEXT,
+            file_synced_at TEXT,
+            artwork_synced_at TEXT,
+            PRIMARY KEY (device_id, track_id)
+        )"
+    );
+}
+
 pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "
@@ -138,5 +176,6 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     migrate_playlists(conn);
     migrate_ai_tags(conn);
     migrate_bios(conn);
+    migrate_sync(conn);
     Ok(())
 }

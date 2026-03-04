@@ -11,3 +11,4 @@ pub mod artwork;
 pub mod preferences;
 pub mod lyrics;
 pub mod speech;
+pub mod sync;

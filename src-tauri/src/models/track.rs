@@ -44,6 +44,7 @@ pub struct Track {
     pub danceability: Option<i32>,
     pub acousticness: Option<i32>,
     pub ai_tagged_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 /// JXA bulk output: struct-of-arrays format (each field is a Vec)

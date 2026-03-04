@@ -14,7 +14,15 @@ import {
   setAssistantApiKey,
   exportAiTags,
   importAiTags,
+  startSyncServer,
+  stopSyncServer,
+  generatePairingCode,
+  getSyncStatus,
+  unpairDevice,
+  setSyncPlaylists,
+  getPlaylists,
 } from "../lib/commands";
+import type { SyncStatus, Playlist } from "../lib/types";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -40,10 +48,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [tagBackupStatus, setTagBackupStatus] = useState<string | null>(null);
 
+  // Sync state
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [allPlaylists, setAllPlaylists] = useState<Playlist[]>([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+
   useEffect(() => {
     getPreference("ai_auto_tag").then((v) => setAiAutoTag(v === "true"));
     getPreference("assistant_tts_enabled").then((v) => setAssistantTts(v === "true"));
     hasAssistantApiKey().then(setHasApiKey);
+    getSyncStatus().then(setSyncStatus).catch(() => {});
+    getPlaylists().then(setAllPlaylists).catch(() => {});
   }, []);
 
   const handleAutoTagToggle = useCallback((v: boolean) => {
@@ -338,6 +353,127 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               checked={assistantTts}
               onChange={handleTtsToggle}
             />
+          </div>
+        </div>
+
+        {/* Mobile Sync */}
+        <div className="px-6 py-4 border-t border-n-800">
+          <h3 className="text-[11px] font-medium text-n-500 uppercase tracking-wider mb-3">Mobile Sync</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[13px] text-n-200">Sync Server</span>
+                <p className="text-[11px] text-n-500">Allow iOS devices to sync over local network</p>
+              </div>
+              <button
+                disabled={syncLoading}
+                onClick={async () => {
+                  setSyncLoading(true);
+                  try {
+                    if (syncStatus?.running) {
+                      await stopSyncServer();
+                    } else {
+                      await startSyncServer();
+                    }
+                    const s = await getSyncStatus();
+                    setSyncStatus(s);
+                  } catch (e) {
+                    console.error("Sync toggle failed:", e);
+                  }
+                  setSyncLoading(false);
+                }}
+                className={`w-9 h-5 rounded-full transition-colors relative ${
+                  syncStatus?.running ? "bg-accent" : "bg-n-700"
+                }`}
+              >
+                <div
+                  className={`w-3.5 h-3.5 rounded-full bg-white absolute top-[3px] transition-transform ${
+                    syncStatus?.running ? "translate-x-[18px]" : "translate-x-[3px]"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {syncStatus?.running && (
+              <>
+                {/* Pairing */}
+                <div className="bg-n-900 rounded-lg p-3">
+                  {syncStatus.pairingCode ? (
+                    <div className="text-center">
+                      <p className="text-[11px] text-n-500 mb-1">Pairing Code</p>
+                      <p className="text-[28px] font-mono font-bold text-n-100 tracking-[0.3em]">{syncStatus.pairingCode}</p>
+                      <p className="text-[10px] text-n-600 mt-1">Enter this code on your iOS device</p>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        await generatePairingCode();
+                        const s = await getSyncStatus();
+                        setSyncStatus(s);
+                      }}
+                      className="w-full px-3 py-1.5 text-[11px] rounded-md bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+                    >
+                      Generate Pairing Code
+                    </button>
+                  )}
+                </div>
+
+                {/* Paired Devices */}
+                {syncStatus.devices.length > 0 && (
+                  <div>
+                    <p className="text-[11px] text-n-500 mb-2">Paired Devices</p>
+                    {syncStatus.devices.map((d) => (
+                      <div key={d.id} className="flex items-center justify-between bg-n-900 rounded-lg px-3 py-2 mb-1">
+                        <div>
+                          <span className="text-[12px] text-n-200">{d.name}</span>
+                          <p className="text-[10px] text-n-600">
+                            {d.lastSyncAt ? `Last sync: ${new Date(d.lastSyncAt).toLocaleDateString()}` : "Never synced"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await unpairDevice(d.id);
+                            const s = await getSyncStatus();
+                            setSyncStatus(s);
+                          }}
+                          className="text-[10px] text-red-400 hover:text-red-300"
+                        >
+                          Unpair
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Playlist Selection */}
+                    <p className="text-[11px] text-n-500 mt-3 mb-2">Sync Playlists</p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {allPlaylists.filter((p) => !p.isFolder).map((p) => {
+                        const selected = syncStatus.selectedPlaylists.includes(p.id);
+                        return (
+                          <label key={p.id} className="flex items-center gap-2 text-[12px] text-n-300 cursor-pointer hover:text-n-100">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={async () => {
+                                const device = syncStatus.devices[0];
+                                if (!device) return;
+                                const newIds = selected
+                                  ? syncStatus.selectedPlaylists.filter((id) => id !== p.id)
+                                  : [...syncStatus.selectedPlaylists, p.id];
+                                await setSyncPlaylists(device.id, newIds);
+                                const s = await getSyncStatus();
+                                setSyncStatus(s);
+                              }}
+                              className="rounded"
+                            />
+                            {p.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 

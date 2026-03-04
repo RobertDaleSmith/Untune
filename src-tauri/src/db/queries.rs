@@ -10,7 +10,8 @@ pub const TRACK_COLUMNS: &str =
      date_added, last_played_at, last_skipped_at, comments, grouping_,
      sort_title, sort_artist, sort_album, sort_album_artist, sort_composer,
      file_path, artwork_hash, has_artwork,
-     mood, energy, vibe_tags, bpm, danceability, acousticness, ai_tagged_at";
+     mood, energy, vibe_tags, bpm, danceability, acousticness, ai_tagged_at,
+     updated_at";
 
 pub const TRACK_COLUMNS_PREFIXED: &str =
     "t.id, t.persistent_id, t.title, t.artist, t.album_artist, t.album, t.genre, t.composer,
@@ -19,7 +20,8 @@ pub const TRACK_COLUMNS_PREFIXED: &str =
      t.date_added, t.last_played_at, t.last_skipped_at, t.comments, t.grouping_,
      t.sort_title, t.sort_artist, t.sort_album, t.sort_album_artist, t.sort_composer,
      t.file_path, t.artwork_hash, t.has_artwork,
-     t.mood, t.energy, t.vibe_tags, t.bpm, t.danceability, t.acousticness, t.ai_tagged_at";
+     t.mood, t.energy, t.vibe_tags, t.bpm, t.danceability, t.acousticness, t.ai_tagged_at,
+     t.updated_at";
 
 pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
     Ok(Track {
@@ -64,6 +66,7 @@ pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
         danceability: row.get(38)?,
         acousticness: row.get(39)?,
         ai_tagged_at: row.get(40)?,
+        updated_at: row.get(41)?,
     })
 }
 
@@ -398,7 +401,7 @@ pub fn update_artwork_for_album(
     artist: &str,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET artwork_hash = ?1
+        "UPDATE tracks SET artwork_hash = ?1, updated_at = datetime('now')
          WHERE COALESCE(album, '(Unknown Album)') = ?2
            AND COALESCE(album_artist, artist, '(Unknown Artist)') = ?3",
         params![artwork_hash, album, artist],
@@ -454,7 +457,7 @@ pub fn reorder_playlists(
     let tx = conn.unchecked_transaction()?;
     {
         let mut stmt = tx.prepare(
-            "UPDATE playlists SET sort_order = ?1, parent_id = ?2 WHERE id = ?3",
+            "UPDATE playlists SET sort_order = ?1, parent_id = ?2, updated_at = datetime('now') WHERE id = ?3",
         )?;
         for &(id, sort_order, parent_id) in updates {
             stmt.execute(params![sort_order, parent_id, id])?;
@@ -500,7 +503,7 @@ pub fn update_track_rating(
     rating: Option<i32>,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET rating = ? WHERE id = ?",
+        "UPDATE tracks SET rating = ?, updated_at = datetime('now') WHERE id = ?",
         params![rating, track_id],
     )?;
     Ok(())
@@ -511,7 +514,7 @@ pub fn record_track_played(
     track_id: i64,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET play_count = COALESCE(play_count, 0) + 1, last_played_at = datetime('now') WHERE id = ?",
+        "UPDATE tracks SET play_count = COALESCE(play_count, 0) + 1, last_played_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
         params![track_id],
     )?;
     Ok(())
@@ -522,7 +525,7 @@ pub fn record_track_skipped(
     track_id: i64,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET skip_count = COALESCE(skip_count, 0) + 1, last_skipped_at = datetime('now') WHERE id = ?",
+        "UPDATE tracks SET skip_count = COALESCE(skip_count, 0) + 1, last_skipped_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
         params![track_id],
     )?;
     Ok(())
