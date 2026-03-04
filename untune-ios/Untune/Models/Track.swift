@@ -1,5 +1,13 @@
 import Foundation
 
+extension Optional where Wrapped == String {
+    /// Returns nil if the string is nil or empty/whitespace-only.
+    var nonEmpty: String? {
+        guard let self, !self.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return self
+    }
+}
+
 struct Track: Codable, Identifiable, Hashable {
     let id: Int64
     let persistentId: String?
@@ -39,7 +47,7 @@ struct Track: Codable, Identifiable, Hashable {
     var fileDownloaded: Bool
 
     var displayArtist: String {
-        artist ?? albumArtist ?? "Unknown Artist"
+        artist.nonEmpty ?? albumArtist.nonEmpty ?? "Unknown Artist"
     }
 
     var displayAlbum: String {

@@ -1,5 +1,9 @@
 import SwiftUI
 
+private struct AlbumDestination: Hashable {
+    let name: String
+}
+
 struct LibraryView: View {
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(SyncEngine.self) private var syncEngine
@@ -8,15 +12,24 @@ struct LibraryView: View {
     @State private var selectedTab = 1
     @State private var showSettings = false
     @State private var scrollTracker = ScrollTracker()
+    @State private var navigationPath = NavigationPath()
+    @Binding var pendingArtist: String?
+    @Binding var pendingAlbum: String?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             VStack(spacing: 0) {
                 HStack {
                     Text("Library")
                         .font(.title)
                         .fontWeight(.bold)
                     Spacer()
+                    Button {
+                        shuffleAll()
+                    } label: {
+                        Image(systemName: "dice.fill")
+                            .font(.title3)
+                    }
                     Button {
                         showSettings = true
                     } label: {
@@ -57,6 +70,29 @@ struct LibraryView: View {
                 if newState == .done {
                     loadData()
                 }
+            }
+            .onChange(of: pendingArtist) { _, artist in
+                guard let artist else { return }
+                pendingArtist = nil
+                selectedTab = 3
+                // Small delay to let the Artists tab render before pushing
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    navigationPath.append(artist)
+                }
+            }
+            .onChange(of: pendingAlbum) { _, album in
+                guard let album else { return }
+                pendingAlbum = nil
+                selectedTab = 2
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    navigationPath.append(AlbumDestination(name: album))
+                }
+            }
+            .navigationDestination(for: String.self) { artistName in
+                artistDetailView(for: artistName)
+            }
+            .navigationDestination(for: AlbumDestination.self) { dest in
+                albumDetailView(for: dest.name)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -124,6 +160,37 @@ struct LibraryView: View {
                 }
             }
         }
+    }
+
+    private func shuffleAll() {
+        selectedTab = 1
+        if !audioPlayer.shuffle {
+            audioPlayer.toggleShuffle()
+        }
+        guard !allTracks.isEmpty else { return }
+        let randomIndex = Int.random(in: 0..<allTracks.count)
+        audioPlayer.play(tracks: allTracks, startIndex: randomIndex)
+    }
+
+    @ViewBuilder
+    private func artistDetailView(for artistName: String) -> some View {
+        let artistTracks = allTracks.filter {
+            ($0.albumArtist.nonEmpty ?? $0.artist.nonEmpty ?? "Unknown Artist") == artistName
+        }.sorted { $0.title < $1.title }
+
+        ArtistDetailView(artistName: artistName, tracks: artistTracks)
+    }
+
+    @ViewBuilder
+    private func albumDetailView(for albumName: String) -> some View {
+        let albumTracks = allTracks.filter {
+            ($0.album ?? "Unknown Album") == albumName
+        }.sorted {
+            ($0.discNumber ?? 1, $0.trackNumber ?? 0) < ($1.discNumber ?? 1, $1.trackNumber ?? 0)
+        }
+        let artist = albumTracks.first?.albumArtist.nonEmpty ?? albumTracks.first?.artist.nonEmpty ?? "Unknown Artist"
+
+        AlbumDetailView(albumName: albumName, artistName: artist, tracks: albumTracks)
     }
 
     private func loadData() {

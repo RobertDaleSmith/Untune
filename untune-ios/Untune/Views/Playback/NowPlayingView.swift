@@ -3,7 +3,10 @@ import UIKit
 
 struct NowPlayingView: View {
     @Environment(AudioPlayer.self) private var audioPlayer
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
+    @Binding var pendingArtist: String?
+    @Binding var pendingAlbum: String?
     @State private var showQueue = false
     @State private var isDragging = false
     @State private var dragPosition: Double = 0
@@ -35,14 +38,19 @@ struct NowPlayingView: View {
                     }
                 }
                 .blur(radius: 60)
-                .saturation(1.6)
-                .overlay(Color.black.opacity(0.35))
+                .saturation(colorScheme == .dark ? 1.6 : 1.2)
+                .brightness(colorScheme == .dark ? 0.0 : 0.25)
+                .overlay(
+                    colorScheme == .dark
+                        ? Color.black.opacity(0.35)
+                        : Color.white.opacity(0.55)
+                )
                 .ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     // Dismiss handle
                     RoundedRectangle(cornerRadius: 2.5)
-                        .fill(.white.opacity(0.5))
+                        .fill(.primary.opacity(0.3))
                         .frame(width: 36, height: 5)
                         .padding(.top, 12)
                         .padding(.bottom, 8)
@@ -58,16 +66,30 @@ struct NowPlayingView: View {
                     VStack(spacing: 4) {
                         MarqueeText(track.title, font: .title2.bold())
 
-                        Text(track.displayArtist)
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-
-                        if let album = track.album {
-                            Text(album)
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
+                        Button {
+                            let artist = track.albumArtist.nonEmpty ?? track.artist.nonEmpty ?? track.displayArtist
+                            pendingArtist = artist
+                            dismiss()
+                        } label: {
+                            Text(track.displayArtist)
+                                .font(.title3)
+                                .foregroundStyle(.primary.opacity(0.85))
                                 .lineLimit(1)
+                        }
+
+                        if let album = track.album.nonEmpty {
+                            Button {
+                                pendingAlbum = album
+                                dismiss()
+                            } label: {
+                                Text(album)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary.opacity(0.5))
+                                    .lineLimit(1)
+                            }
+                        } else {
+                            Text(" ")
+                                .font(.subheadline)
                         }
                     }
                     .padding(.horizontal, 32)
@@ -75,25 +97,46 @@ struct NowPlayingView: View {
 
                     // Scrubber
                     VStack(spacing: 4) {
-                        Slider(
-                            value: Binding(
-                                get: { audioPlayer.duration > 0 ? displayPosition / audioPlayer.duration : 0 },
-                                set: { newValue in
-                                    dragPosition = newValue * audioPlayer.duration
-                                    if !isDragging {
-                                        audioPlayer.seekToFraction(newValue)
-                                    }
-                                }
-                            ),
-                            in: 0...1,
-                            onEditingChanged: { editing in
-                                isDragging = editing
-                                if !editing {
-                                    audioPlayer.seek(to: dragPosition)
-                                }
+                        GeometryReader { geo in
+                            let fraction = audioPlayer.duration > 0 ? displayPosition / audioPlayer.duration : 0
+                            let thumbX = geo.size.width * fraction
+
+                            ZStack(alignment: .leading) {
+                                // Track background
+                                Capsule()
+                                    .fill(.primary.opacity(0.2))
+                                    .frame(height: 4)
+
+                                // Filled portion
+                                Capsule()
+                                    .fill(tintColor)
+                                    .frame(width: max(0, thumbX), height: 4)
+
+                                // Thumb
+                                Circle()
+                                    .fill(tintColor)
+                                    .frame(width: isDragging ? 16 : 8, height: isDragging ? 16 : 8)
+                                    .shadow(radius: 2)
+                                    .offset(x: max(0, thumbX - (isDragging ? 8 : 4)))
+                                    .animation(.easeOut(duration: 0.15), value: isDragging)
                             }
-                        )
-                        .tint(tintColor)
+                            .frame(height: geo.size.height)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        isDragging = true
+                                        let frac = max(0, min(1, value.location.x / geo.size.width))
+                                        dragPosition = frac * audioPlayer.duration
+                                    }
+                                    .onEnded { value in
+                                        let frac = max(0, min(1, value.location.x / geo.size.width))
+                                        audioPlayer.seekToFraction(frac)
+                                        isDragging = false
+                                    }
+                            )
+                        }
+                        .frame(height: 24)
 
                         HStack {
                             Text(TimeFormatting.format(seconds: displayPosition))
@@ -124,7 +167,7 @@ struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "backward.fill")
                                 .font(.title)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
 
                         Button {
@@ -133,7 +176,7 @@ struct NowPlayingView: View {
                         } label: {
                             Image(systemName: audioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.system(size: 60))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
 
                         Button {
@@ -142,7 +185,7 @@ struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "forward.fill")
                                 .font(.title)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
 
                         Button { audioPlayer.cycleRepeat() } label: {
@@ -156,8 +199,8 @@ struct NowPlayingView: View {
                     // Queue button
                     Button { showQueue = true } label: {
                         Label("Up Next", systemImage: "list.bullet")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
                     }
 
                     Spacer()

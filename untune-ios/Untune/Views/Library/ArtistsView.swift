@@ -5,7 +5,7 @@ struct ArtistsView: View {
     let tracks: [Track]
 
     private var artists: [(name: String, trackCount: Int, tracks: [Track])] {
-        let grouped = Dictionary(grouping: tracks) { $0.albumArtist ?? $0.artist ?? "Unknown Artist" }
+        let grouped = Dictionary(grouping: tracks) { $0.albumArtist.nonEmpty ?? $0.artist.nonEmpty ?? "Unknown Artist" }
         return grouped.map { key, tracks in
             (name: key, trackCount: tracks.count, tracks: tracks.sorted { $0.title < $1.title })
         }
@@ -16,7 +16,7 @@ struct ArtistsView: View {
         List {
             ForEach(artists, id: \.name) { artist in
                 NavigationLink {
-                    artistDetailView(artist)
+                    ArtistDetailView(artistName: artist.name, tracks: artist.tracks)
                 } label: {
                     HStack(spacing: 12) {
                         ArtistAvatar(name: artist.name, size: 44)
@@ -37,64 +37,9 @@ struct ArtistsView: View {
         .scrollContentBackground(.hidden)
     }
 
-    @ViewBuilder
-    private func artistDetailView(_ artist: (name: String, trackCount: Int, tracks: [Track])) -> some View {
-        ScrollViewReader { proxy in
-        List {
-            Section {
-                VStack(spacing: 8) {
-                    ArtistAvatar(name: artist.name, size: 120)
-
-                    Text(artist.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("\(artist.trackCount) songs")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        audioPlayer.play(tracks: artist.tracks)
-                    } label: {
-                        Label("Play All", systemImage: "play.fill")
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
-                }
-                .frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear)
-                .padding()
-            }
-
-            Section {
-                ForEach(Array(artist.tracks.enumerated()), id: \.element.id) { index, track in
-                    TrackRow(
-                        track: track,
-                        isPlaying: audioPlayer.currentTrack?.id == track.id
-                    )
-                    .id(track.id)
-                    .listRowBackground(Color.clear)
-                    .onTapGesture {
-                        audioPlayer.play(tracks: artist.tracks, startIndex: index)
-                    }
-                }
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .navigationTitle(artist.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if let id = audioPlayer.currentTrack?.id {
-                proxy.scrollTo(id, anchor: .center)
-            }
-        }
-        }
-    }
 }
 
-private struct ArtistAvatar: View {
+struct ArtistAvatar: View {
     let name: String
     let size: CGFloat
 
