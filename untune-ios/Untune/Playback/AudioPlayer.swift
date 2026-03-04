@@ -21,6 +21,8 @@ enum RepeatMode: String, CaseIterable {
 
 @Observable
 class AudioPlayer {
+    static let shared = AudioPlayer()
+
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var itemObserver: NSKeyValueObservation?

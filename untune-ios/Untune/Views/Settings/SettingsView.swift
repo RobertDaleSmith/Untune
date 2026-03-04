@@ -8,15 +8,21 @@ struct SettingsView: View {
     @State private var trackCount = 0
     @State private var downloadedCount = 0
     @State private var dbSize: Int64 = 0
+    @State private var musicSize: Int64 = 0
+    @State private var artworkSize: Int64 = 0
     @State private var showPairing = false
+    @State private var showPlaylistPicker = false
 
+    @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
+                appearanceSection
                 syncSection
                 librarySection
+                storageSection
                 aboutSection
             }
             .navigationTitle("Settings")
@@ -33,6 +39,25 @@ struct SettingsView: View {
             .sheet(isPresented: $showPairing) {
                 PairingView()
             }
+            .sheet(isPresented: $showPlaylistPicker) {
+                PlaylistSyncPickerView()
+            }
+            .onChange(of: syncEngine.state) { _, newState in
+                showPlaylistPicker = newState == .awaitingSelection
+            }
+        }
+    }
+
+    // MARK: - Appearance Section
+
+    private var appearanceSection: some View {
+        Section("Appearance") {
+            Picker("Theme", selection: $appearanceMode) {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
         }
     }
 
@@ -52,7 +77,7 @@ struct SettingsView: View {
 
                 // Sync button
                 Button {
-                    Task { await syncEngine.startSync() }
+                    Task { await syncEngine.fetchPlaylistsForSelection() }
                 } label: {
                     Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
                 }
@@ -82,7 +107,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var syncStatusRow: some View {
         switch syncEngine.state {
-        case .idle:
+        case .idle, .awaitingSelection:
             HStack {
                 Image(systemName: "checkmark.circle")
                     .foregroundStyle(.green)
@@ -146,8 +171,23 @@ struct SettingsView: View {
             LabeledContent("Downloaded") {
                 Text("\(downloadedCount)")
             }
-            LabeledContent("Database Size") {
+        }
+    }
+
+    private var storageSection: some View {
+        Section("Storage") {
+            LabeledContent("Music") {
+                Text(formatBytes(musicSize))
+            }
+            LabeledContent("Artwork") {
+                Text(formatBytes(artworkSize))
+            }
+            LabeledContent("Database") {
                 Text(formatBytes(dbSize))
+            }
+            LabeledContent("Total") {
+                Text(formatBytes(musicSize + artworkSize + dbSize))
+                    .bold()
             }
         }
     }
@@ -175,6 +215,27 @@ struct SettingsView: View {
         } catch {
             print("Failed to load stats: \(error)")
         }
+
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        musicSize = directorySize(docs.appendingPathComponent("Music"))
+
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        artworkSize = directorySize(appSupport.appendingPathComponent("Artwork"))
+    }
+
+    private func directorySize(_ url: URL) -> Int64 {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) else {
+            return 0
+        }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

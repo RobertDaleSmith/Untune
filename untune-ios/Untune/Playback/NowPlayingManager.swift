@@ -28,12 +28,10 @@ class NowPlayingManager {
         }
 
         // Load artwork if available
-        if let artworkHash = track.artworkHash {
-            let artworkPath = artworkFilePath(hash: artworkHash)
-            if let image = UIImage(contentsOfFile: artworkPath) {
-                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                info[MPMediaItemPropertyArtwork] = artwork
-            }
+        if let artworkHash = track.artworkHash,
+           let image = ArtworkCache.shared.image(forHash: artworkHash) {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = artwork
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
@@ -90,10 +88,45 @@ class NowPlayingManager {
             player?.seek(to: event.positionTime)
             return .success
         }
-    }
 
-    private func artworkFilePath(hash: String) -> String {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("Artwork/\(hash).jpg").path
+        center.changeShuffleModeCommand.isEnabled = true
+        center.changeShuffleModeCommand.addTarget { [weak player] event in
+            guard let player,
+                  let event = event as? MPChangeShuffleModeCommandEvent else {
+                return .commandFailed
+            }
+            let wantsShuffle = event.shuffleType != .off
+            if wantsShuffle {
+                // Dice button behavior: load all tracks, enable shuffle, play from random index
+                if let allTracks = try? DatabaseManager.shared.fetchAllTracks(), !allTracks.isEmpty {
+                    if !player.shuffle { player.toggleShuffle() }
+                    let randomIndex = Int.random(in: 0..<allTracks.count)
+                    player.play(tracks: allTracks, startIndex: randomIndex)
+                }
+            } else {
+                // "Turn off shuffle"
+                if player.shuffle { player.toggleShuffle() }
+            }
+            return .success
+        }
+
+        center.changeRepeatModeCommand.isEnabled = true
+        center.changeRepeatModeCommand.addTarget { [weak player] event in
+            guard let player,
+                  let event = event as? MPChangeRepeatModeCommandEvent else {
+                return .commandFailed
+            }
+            switch event.repeatType {
+            case .off:
+                if player.repeatMode != .off { player.cycleRepeat(); if player.repeatMode != .off { player.cycleRepeat() } }
+            case .one:
+                while player.repeatMode != .one { player.cycleRepeat() }
+            case .all:
+                while player.repeatMode != .all { player.cycleRepeat() }
+            @unknown default:
+                break
+            }
+            return .success
+        }
     }
 }

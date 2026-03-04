@@ -96,6 +96,7 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+                    .tint(.accentColor)
             }
         }
     }

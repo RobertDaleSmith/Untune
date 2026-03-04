@@ -95,9 +95,8 @@ struct SplashView<Content: View>: View {
                     StarfieldView(stars: stars, starColor: isDark ? .white : .black)
 
                     VStack(spacing: 32) {
-                        Image(isDark ? "SplashIcon" : "SplashIconLight")
-                            .resizable()
-                            .scaledToFit()
+                        AppIconShape()
+                            .fill(isDark ? Color.white : Color.black)
                             .frame(width: 140, height: 140)
 
                         Circle()

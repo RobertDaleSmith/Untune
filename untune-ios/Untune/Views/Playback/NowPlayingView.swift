@@ -13,7 +13,7 @@ struct NowPlayingView: View {
     @State private var dismissOffset: CGFloat = 0
 
     private var tintColor: Color {
-        audioPlayer.accentColor ?? .white
+        audioPlayer.accentColor ?? (colorScheme == .dark ? .white : .black)
     }
 
     private var displayPosition: Double {
@@ -225,7 +225,7 @@ struct NowPlayingView: View {
                     }
             )
             .animation(.interactiveSpring, value: dismissOffset)
-            .tint(audioPlayer.accentColor ?? .white)
+            .tint(tintColor)
             .sheet(isPresented: $showQueue) {
                 QueueView()
             }

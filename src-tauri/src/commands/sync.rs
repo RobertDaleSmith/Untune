@@ -1,4 +1,4 @@
-use crate::db::Database;
+use crate::db::{self, Database};
 use crate::sync::SyncServer;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -48,13 +48,25 @@ pub fn start_sync_server(
 
     let mut server = sync.lock().map_err(|e| e.to_string())?;
     server.start(db_path, artwork_dir, desktop_name);
+
+    // Persist enabled state
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let _ = db::set_preference(&conn, "sync_server_enabled", "true");
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn stop_sync_server(sync: State<Mutex<SyncServer>>) -> Result<(), String> {
+pub fn stop_sync_server(
+    sync: State<Mutex<SyncServer>>,
+    db: State<Database>,
+) -> Result<(), String> {
     let mut server = sync.lock().map_err(|e| e.to_string())?;
     server.stop();
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let _ = db::set_preference(&conn, "sync_server_enabled", "false");
+
     Ok(())
 }
 

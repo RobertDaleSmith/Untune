@@ -112,6 +112,10 @@ pub fn run() {
                 let conn = db.conn.lock().unwrap();
                 db::get_preference(&conn, "columnBrowserAlbumArtist").ok().flatten()
             };
+            let saved_sync_enabled = {
+                let conn = db.conn.lock().unwrap();
+                db::get_preference(&conn, "sync_server_enabled").ok().flatten()
+            };
 
             let assistant = AssistantState::new();
             {
@@ -119,11 +123,37 @@ pub fn run() {
                 assistant.init_from_db(&conn);
             }
 
+            // Auto-start sync server if it was enabled last session
+            let sync_server = sync::SyncServer::new();
+            if saved_sync_enabled.as_deref() == Some("true") {
+                let db_path = {
+                    let conn = db.conn.lock().unwrap();
+                    conn.path().unwrap_or_default().to_string()
+                };
+                let artwork_dir = if let Some(app_support) = dirs::data_dir() {
+                    app_support
+                        .join("com.untune.app")
+                        .join("artwork")
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    String::new()
+                };
+                let desktop_name = hostname::get()
+                    .map(|h| h.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| "Untune Desktop".to_string());
+
+                let mut server = sync_server;
+                server.start(db_path, artwork_dir, desktop_name);
+                app.manage(Mutex::new(server));
+            } else {
+                app.manage(Mutex::new(sync_server));
+            }
+
             app.manage(db);
             app.manage(PlaybackState::new());
             app.manage(assistant);
             app.manage(AiTaggingState::new());
-            app.manage(Mutex::new(sync::SyncServer::new()));
 
             // Set window/dock icon
             if let Some(window) = app.get_webview_window("main") {

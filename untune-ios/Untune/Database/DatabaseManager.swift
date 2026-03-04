@@ -108,7 +108,7 @@ class DatabaseManager {
                 arguments: [ISO8601DateFormatter().string(from: Date()), trackId]
             )
             // Queue for sync
-            var stat = PendingPlayStatRecord(
+            let stat = PendingPlayStatRecord(
                 trackId: trackId,
                 playCountDelta: 1,
                 skipCountDelta: 0,
@@ -124,13 +124,86 @@ class DatabaseManager {
                 sql: "UPDATE tracks SET skipCount = skipCount + 1, lastSkippedAt = ? WHERE id = ?",
                 arguments: [ISO8601DateFormatter().string(from: Date()), trackId]
             )
-            var stat = PendingPlayStatRecord(
+            let stat = PendingPlayStatRecord(
                 trackId: trackId,
                 playCountDelta: 0,
                 skipCountDelta: 1,
                 lastSkippedAt: ISO8601DateFormatter().string(from: Date())
             )
             try stat.insert(db)
+        }
+    }
+
+    // MARK: - Search
+
+    func searchTracks(query: String) throws -> [Track] {
+        try dbPool.read { db in
+            let pattern = "%\(query)%"
+            let sql = """
+                SELECT *, CASE
+                    WHEN title LIKE ? THEN 1
+                    WHEN artist LIKE ? OR albumArtist LIKE ? THEN 2
+                    WHEN album LIKE ? THEN 3
+                    ELSE 4
+                END AS relevance
+                FROM tracks
+                WHERE title LIKE ? OR artist LIKE ? OR albumArtist LIKE ? OR album LIKE ?
+                ORDER BY relevance, title
+                LIMIT 200
+                """
+            return try TrackRecord.fetchAll(
+                db, sql: sql,
+                arguments: [pattern, pattern, pattern, pattern,
+                            pattern, pattern, pattern, pattern]
+            ).map { $0.toTrack() }
+        }
+    }
+
+    func searchTracksByArtist(_ artist: String) throws -> [Track] {
+        try dbPool.read { db in
+            let pattern = "%\(artist)%"
+            let sql = """
+                SELECT * FROM tracks
+                WHERE artist LIKE ? OR albumArtist LIKE ?
+                ORDER BY album, discNumber, trackNumber
+                LIMIT 200
+                """
+            return try TrackRecord.fetchAll(db, sql: sql, arguments: [pattern, pattern])
+                .map { $0.toTrack() }
+        }
+    }
+
+    func searchTracksByAlbum(_ album: String) throws -> [Track] {
+        try dbPool.read { db in
+            let pattern = "%\(album)%"
+            let sql = """
+                SELECT * FROM tracks
+                WHERE album LIKE ?
+                ORDER BY discNumber, trackNumber
+                LIMIT 200
+                """
+            return try TrackRecord.fetchAll(db, sql: sql, arguments: [pattern])
+                .map { $0.toTrack() }
+        }
+    }
+
+    func fetchTracksByIds(_ ids: [Int64]) throws -> [Track] {
+        try dbPool.read { db in
+            let placeholders = ids.map { _ in "?" }.joined(separator: ",")
+            let sql = """
+                SELECT * FROM tracks
+                WHERE id IN (\(placeholders))
+                """
+            return try TrackRecord.fetchAll(db, sql: sql, arguments: StatementArguments(ids))
+                .map { $0.toTrack() }
+        }
+    }
+
+    func fetchRandomTracks(limit: Int) throws -> [Track] {
+        try dbPool.read { db in
+            let sql = "SELECT * FROM tracks WHERE localPath IS NOT NULL ORDER BY RANDOM() LIMIT ?"
+            return try TrackRecord.fetchAll(db, sql: sql, arguments: [limit])
+                .map { $0.toTrack() }
         }
     }
 

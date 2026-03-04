@@ -19,9 +19,12 @@
 		4423C6B5A91344C25AA61696 /* TimeFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 366EA35CFF657C1524DAE543 /* TimeFormatting.swift */; };
 		5263FBF06DD66B11B7F39AE4 /* DatabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87C37ABF67A44A9FA958A7C5 /* DatabaseManager.swift */; };
 		570277FFDDEC406AB0317C57 /* SyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FED6ACE91235B897909FEC /* SyncClient.swift */; };
+		6D2446A21DAECEAD933AF307 /* AppIconShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398B8743EE415A10027FECB8 /* AppIconShape.swift */; };
 		6D420065197B9A0CF592C5A7 /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB21C6DDCD2B591ADBD0581E /* MockData.swift */; };
 		74B02347B0CD8188874051D1 /* MarqueeText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0978F169B4C244C7A90EDCE /* MarqueeText.swift */; };
+		78050772CC7F7634A56AB723 /* CarPlayBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF5107739A37AC136FEA3182 /* CarPlayBrowser.swift */; };
 		856E73EE4248BB34D66C226A /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992B8C7886F6B9B69889AC99 /* PairingView.swift */; };
+		8D672E94B2E79CFD8571780B /* PlaylistSyncPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A44D6357F280475B001AAA /* PlaylistSyncPickerView.swift */; };
 		92200A36EF0F04300859EFB8 /* ArtistsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECA30F62469BB3DC220C6C6 /* ArtistsView.swift */; };
 		92680D673991AEF45582A739 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7084FD4AB8C2E3EBEE8EBB8B /* GRDB */; };
 		964ABC77301F259923987D30 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 571672872205A56460870749 /* Assets.xcassets */; };
@@ -37,13 +40,17 @@
 		C78BAEDB5DA75F5A0EADDC61 /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6349D298248188C3EB69ECB8 /* Schema.swift */; };
 		C8AB8869006D0CA5D4C84832 /* AutoScrollModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048E42D70572DD8EAC889FFA /* AutoScrollModifier.swift */; };
 		CB0FF65FA5A35F360451B831 /* QueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672F4D8E05E0165A9AD23D0E /* QueueView.swift */; };
+		D3F517491C5EA8A57F6656D8 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 391475468033D8F7B288F980 /* CarPlaySceneDelegate.swift */; };
 		D414D72291B813A9E3855076 /* ArtworkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7891462149A22FD340640A2D /* ArtworkView.swift */; };
 		D538B450B7D2A743F3109E75 /* AccentColorExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3AF2C936DA52F968E4B02F /* AccentColorExtractor.swift */; };
 		D9DEFE22695A968F6B7426E2 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEFAF873677F37593E7A57E2 /* SyncEngine.swift */; };
 		E2142B4BA54827B34F366A8B /* UntuneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD06777CE672941F1E506931 /* UntuneApp.swift */; };
 		E92205CD9E5A4A8A0030E030 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A86BEFF5BD9B4B963820812 /* SplashView.swift */; };
 		ECD95DB2AE3BE8F2C4D295B0 /* DesktopDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C6529C39169A90EFD72126 /* DesktopDiscovery.swift */; };
+		ED832314054CD4C7F2B699AB /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2152D162C2DE55646A3C625 /* Intents.framework */; };
 		EEC43CFBA197F833BF6EEA8B /* TransparentBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE1D4B92F9AD8578B54B686 /* TransparentBackground.swift */; };
+		FA006D420C8B188468DC10F0 /* CarPlay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C8C8D6F56A00EC3D4882488 /* CarPlay.framework */; };
+		FD1DE66FD9F009EC2356F1D2 /* PlayMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7752C54F4237A85FDDA187C7 /* PlayMediaIntentHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,9 +58,12 @@
 		048E42D70572DD8EAC889FFA /* AutoScrollModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoScrollModifier.swift; sourceTree = "<group>"; };
 		0954A8D8E82ABDA1AF614F41 /* PlaylistTrackRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistTrackRecord.swift; sourceTree = "<group>"; };
 		209666FCE2FD4CD0F8177C7F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		23A44D6357F280475B001AAA /* PlaylistSyncPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistSyncPickerView.swift; sourceTree = "<group>"; };
 		24E3191BEDACF6B57D27A706 /* AlbumsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumsView.swift; sourceTree = "<group>"; };
 		2D3A8C24389E7D67DE84B2EF /* Untune.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Untune.entitlements; sourceTree = "<group>"; };
 		366EA35CFF657C1524DAE543 /* TimeFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeFormatting.swift; sourceTree = "<group>"; };
+		391475468033D8F7B288F980 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
+		398B8743EE415A10027FECB8 /* AppIconShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconShape.swift; sourceTree = "<group>"; };
 		3A86BEFF5BD9B4B963820812 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		4ECA30F62469BB3DC220C6C6 /* ArtistsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistsView.swift; sourceTree = "<group>"; };
 		545EE05A799F9A6E5D439B65 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -68,13 +78,16 @@
 		6349D298248188C3EB69ECB8 /* Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Schema.swift; sourceTree = "<group>"; };
 		6709527C40D4EB4C50C8E655 /* TrackRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRow.swift; sourceTree = "<group>"; };
 		672F4D8E05E0165A9AD23D0E /* QueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueView.swift; sourceTree = "<group>"; };
+		7752C54F4237A85FDDA187C7 /* PlayMediaIntentHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayMediaIntentHandler.swift; sourceTree = "<group>"; };
 		7891462149A22FD340640A2D /* ArtworkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkView.swift; sourceTree = "<group>"; };
 		7C29FD01FF602FBD83AE0627 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		7C8C8D6F56A00EC3D4882488 /* CarPlay.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = CarPlay.framework; sourceTree = "<group>"; };
 		87C37ABF67A44A9FA958A7C5 /* DatabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseManager.swift; sourceTree = "<group>"; };
 		8F38C0BB6DF110DD72CFF6CE /* NowPlayingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingManager.swift; sourceTree = "<group>"; };
 		911D885A8A0F94715F8575B1 /* PairingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingManager.swift; sourceTree = "<group>"; };
 		983C236CA7DE0B974C8528F4 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		992B8C7886F6B9B69889AC99 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		A2152D162C2DE55646A3C625 /* Intents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Intents.framework; sourceTree = "<group>"; };
 		A31F386898A10B55090901B3 /* PlaylistRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistRecord.swift; sourceTree = "<group>"; };
 		A6EC9BB72140414FC4C59C9A /* Playlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playlist.swift; sourceTree = "<group>"; };
 		AEFAF873677F37593E7A57E2 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
@@ -83,6 +96,7 @@
 		BC3AF2C936DA52F968E4B02F /* AccentColorExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentColorExtractor.swift; sourceTree = "<group>"; };
 		CB21C6DDCD2B591ADBD0581E /* MockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockData.swift; sourceTree = "<group>"; };
 		CD06777CE672941F1E506931 /* UntuneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UntuneApp.swift; sourceTree = "<group>"; };
+		CF5107739A37AC136FEA3182 /* CarPlayBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayBrowser.swift; sourceTree = "<group>"; };
 		E0749EDEB6DEB077C339E93C /* Untune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Untune.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E0978F169B4C244C7A90EDCE /* MarqueeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarqueeText.swift; sourceTree = "<group>"; };
 		F6CE5A8E54C3769129DDECDE /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
@@ -94,6 +108,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				92680D673991AEF45582A739 /* GRDB in Frameworks */,
+				FA006D420C8B188468DC10F0 /* CarPlay.framework in Frameworks */,
+				ED832314054CD4C7F2B699AB /* Intents.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -108,6 +124,24 @@
 				59FED6ACE91235B897909FEC /* SyncClient.swift */,
 			);
 			path = Networking;
+			sourceTree = "<group>";
+		};
+		1680A126462C6EB5AB3886C0 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7C8C8D6F56A00EC3D4882488 /* CarPlay.framework */,
+				A2152D162C2DE55646A3C625 /* Intents.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		1C75E213C35257E92109C9C0 /* CarPlay */ = {
+			isa = PBXGroup;
+			children = (
+				CF5107739A37AC136FEA3182 /* CarPlayBrowser.swift */,
+				391475468033D8F7B288F980 /* CarPlaySceneDelegate.swift */,
+			);
+			path = CarPlay;
 			sourceTree = "<group>";
 		};
 		22A1AE73ADA390B15A76870D /* Views */ = {
@@ -125,6 +159,7 @@
 			isa = PBXGroup;
 			children = (
 				929AB9C47FEA0F0E78490687 /* Untune */,
+				1680A126462C6EB5AB3886C0 /* Frameworks */,
 				B6ECCE505C8404E5EC3F913A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -161,6 +196,7 @@
 		80EEF933CA682704BBF36C14 /* Common */ = {
 			isa = PBXGroup;
 			children = (
+				398B8743EE415A10027FECB8 /* AppIconShape.swift */,
 				7891462149A22FD340640A2D /* ArtworkView.swift */,
 				048E42D70572DD8EAC889FFA /* AutoScrollModifier.swift */,
 				E0978F169B4C244C7A90EDCE /* MarqueeText.swift */,
@@ -174,11 +210,13 @@
 				545EE05A799F9A6E5D439B65 /* Info.plist */,
 				2D3A8C24389E7D67DE84B2EF /* Untune.entitlements */,
 				F2D5CA03AA908AF9ABBB79DD /* App */,
+				1C75E213C35257E92109C9C0 /* CarPlay */,
 				7CDD0494287467CCE1079BE5 /* Database */,
 				95E66423D993C224BBF3B8F5 /* Models */,
 				0AF3CFF4C3923BF4477F7EE9 /* Networking */,
 				2B05D218F1EBBEFC56818368 /* Playback */,
 				FA28A23D5D82F790477E9779 /* Resources */,
+				E33D395D236E92A9DAAACCCC /* Siri */,
 				5F22D7162EF3C7E3DCDB1F82 /* Sync */,
 				C382EAF46519E5C5A172764A /* Utilities */,
 				22A1AE73ADA390B15A76870D /* Views */,
@@ -206,6 +244,7 @@
 			isa = PBXGroup;
 			children = (
 				992B8C7886F6B9B69889AC99 /* PairingView.swift */,
+				23A44D6357F280475B001AAA /* PlaylistSyncPickerView.swift */,
 				7C29FD01FF602FBD83AE0627 /* SettingsView.swift */,
 			);
 			path = Settings;
@@ -238,6 +277,14 @@
 				5AE1D4B92F9AD8578B54B686 /* TransparentBackground.swift */,
 			);
 			path = Utilities;
+			sourceTree = "<group>";
+		};
+		E33D395D236E92A9DAAACCCC /* Siri */ = {
+			isa = PBXGroup;
+			children = (
+				7752C54F4237A85FDDA187C7 /* PlayMediaIntentHandler.swift */,
+			);
+			path = Siri;
 			sourceTree = "<group>";
 		};
 		EB77568744D78B5E56A88035 /* Library */ = {
@@ -345,11 +392,14 @@
 				D538B450B7D2A743F3109E75 /* AccentColorExtractor.swift in Sources */,
 				A732D979A469808909AF2821 /* AlbumDetailView.swift in Sources */,
 				C77443BAFF6071A062E8B905 /* AlbumsView.swift in Sources */,
+				6D2446A21DAECEAD933AF307 /* AppIconShape.swift in Sources */,
 				149E20E44FEC9917AF4039E1 /* ArtistDetailView.swift in Sources */,
 				92200A36EF0F04300859EFB8 /* ArtistsView.swift in Sources */,
 				D414D72291B813A9E3855076 /* ArtworkView.swift in Sources */,
 				BD542677FC43E65BD71A8098 /* AudioPlayer.swift in Sources */,
 				C8AB8869006D0CA5D4C84832 /* AutoScrollModifier.swift in Sources */,
+				78050772CC7F7634A56AB723 /* CarPlayBrowser.swift in Sources */,
+				D3F517491C5EA8A57F6656D8 /* CarPlaySceneDelegate.swift in Sources */,
 				B72F003CC5DDC52D78C08308 /* ContentView.swift in Sources */,
 				5263FBF06DD66B11B7F39AE4 /* DatabaseManager.swift in Sources */,
 				ECD95DB2AE3BE8F2C4D295B0 /* DesktopDiscovery.swift in Sources */,
@@ -361,9 +411,11 @@
 				23E4B982E7DD6F8EF3D556CA /* NowPlayingView.swift in Sources */,
 				C081345B8C808615AE5ED5E2 /* PairingManager.swift in Sources */,
 				856E73EE4248BB34D66C226A /* PairingView.swift in Sources */,
+				FD1DE66FD9F009EC2356F1D2 /* PlayMediaIntentHandler.swift in Sources */,
 				A8FF03646389565CDC4D20BB /* Playlist.swift in Sources */,
 				1D3203A68E5A59EA48C622E8 /* PlaylistDetailView.swift in Sources */,
 				C61091F57109B60E51C9A7C2 /* PlaylistRecord.swift in Sources */,
+				8D672E94B2E79CFD8571780B /* PlaylistSyncPickerView.swift in Sources */,
 				11837C692CDCA26BE9171D47 /* PlaylistTrackRecord.swift in Sources */,
 				CB0FF65FA5A35F360451B831 /* QueueView.swift in Sources */,
 				C78BAEDB5DA75F5A0EADDC61 /* Schema.swift in Sources */,
@@ -510,10 +562,12 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2DCQGB8UAB;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
 				INFOPLIST_FILE = Untune/Info.plist;
-				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -535,10 +589,12 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2DCQGB8UAB;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
 				INFOPLIST_FILE = Untune/Info.plist;
-				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

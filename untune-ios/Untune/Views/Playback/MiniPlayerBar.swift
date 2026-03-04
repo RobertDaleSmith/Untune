@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MiniPlayerBar: View {
     @Environment(AudioPlayer.self) private var audioPlayer
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var showNowPlaying: Bool
 
     private func playRandom() {
@@ -16,7 +17,7 @@ struct MiniPlayerBar: View {
                 // Progress bar
                 GeometryReader { geo in
                     Rectangle()
-                        .fill(audioPlayer.accentColor ?? .white)
+                        .fill(audioPlayer.accentColor ?? (colorScheme == .dark ? .white : .black))
                         .frame(width: geo.size.width * audioPlayer.progress, height: 2)
                 }
                 .frame(height: 2)

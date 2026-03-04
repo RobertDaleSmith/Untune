@@ -42,6 +42,6 @@ struct ContentView: View {
                 }
         }
         .animation(.easeInOut(duration: 0.8), value: audioPlayer.artworkImage != nil)
-        .tint(audioPlayer.accentColor ?? .white)
+        .tint(audioPlayer.accentColor ?? (colorScheme == .dark ? .white : .black))
     }
 }
