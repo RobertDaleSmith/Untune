@@ -49,14 +49,26 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
   const videoIdRef = useRef(videoId);
   const positionRef = useRef(position);
   const isPlayingRef = useRef(isPlaying);
+  const readyRef = useRef(false);
 
   // Keep refs in sync
   positionRef.current = position;
   isPlayingRef.current = isPlaying;
 
+  const tryPlay = useCallback((player: YT.Player) => {
+    try {
+      const state = player.getPlayerState();
+      // Play if unstarted, cued, or paused — covers all "stuck" states
+      if (state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED || state === YT.PlayerState.PAUSED) {
+        player.mute();
+        player.playVideo();
+      }
+    } catch { /* player not ready */ }
+  }, []);
+
   const syncPosition = useCallback(() => {
     const player = playerRef.current;
-    if (!player?.getCurrentTime) return;
+    if (!player?.getCurrentTime || !readyRef.current) return;
     try {
       const ytTime = player.getCurrentTime();
       const drift = Math.abs(ytTime - positionRef.current);
@@ -64,32 +76,38 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
         player.seekTo(positionRef.current, true);
       }
       // Sync play/pause state
-      const state = player.getPlayerState();
-      if (isPlayingRef.current && state === YT.PlayerState.PAUSED) {
-        player.playVideo();
-      } else if (!isPlayingRef.current && state === YT.PlayerState.PLAYING) {
-        player.pauseVideo();
+      if (isPlayingRef.current) {
+        tryPlay(player);
+      } else {
+        const state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+          player.pauseVideo();
+        }
       }
     } catch {
       // player may not be ready yet
     }
-  }, []);
+  }, [tryPlay]);
 
-  // Initialize player
+  // Initialize player once, then use loadVideoById for subsequent changes
   useEffect(() => {
     let destroyed = false;
-    videoIdRef.current = videoId;
 
     ensureYTApi().then(() => {
       if (destroyed || !containerRef.current) return;
 
-      // Clean up previous player
-      if (playerRef.current) {
-        try { playerRef.current.destroy(); } catch { /* ignore */ }
-        playerRef.current = null;
+      if (playerRef.current && readyRef.current) {
+        // Reuse existing player — much more reliable than destroy/recreate
+        videoIdRef.current = videoId;
+        playerRef.current.loadVideoById({
+          videoId,
+          startSeconds: Math.floor(positionRef.current),
+        });
+        return;
       }
 
-      // Create a div for the player inside the container
+      // First time: create the player
+      videoIdRef.current = videoId;
       const el = document.createElement("div");
       containerRef.current.innerHTML = "";
       containerRef.current.appendChild(el);
@@ -108,13 +126,32 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
           controls: 0,
           showinfo: 0,
           fs: 0,
+          iv_load_policy: 3,
+          disablekb: 1,
         },
         events: {
           onReady: (event: YT.PlayerEvent) => {
+            readyRef.current = true;
             event.target.mute();
             event.target.seekTo(positionRef.current, true);
             if (isPlayingRef.current) {
               event.target.playVideo();
+            }
+          },
+          onStateChange: (event: YT.OnStateChangeEvent) => {
+            // Auto-recover from stuck states
+            if (
+              isPlayingRef.current &&
+              (event.data === YT.PlayerState.UNSTARTED ||
+               event.data === YT.PlayerState.CUED ||
+               event.data === YT.PlayerState.PAUSED)
+            ) {
+              // Small delay to let YouTube finish its internal state transition
+              setTimeout(() => {
+                if (isPlayingRef.current && playerRef.current) {
+                  tryPlay(playerRef.current);
+                }
+              }, 300);
             }
           },
         },
@@ -123,12 +160,19 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
 
     return () => {
       destroyed = true;
+    };
+  }, [videoId, tryPlay]);
+
+  // Cleanup only on unmount
+  useEffect(() => {
+    return () => {
+      readyRef.current = false;
       if (playerRef.current) {
         try { playerRef.current.destroy(); } catch { /* ignore */ }
         playerRef.current = null;
       }
     };
-  }, [videoId]);
+  }, []);
 
   // Periodic sync
   useEffect(() => {
@@ -152,17 +196,39 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
   // Sync play/pause immediately when it changes
   useEffect(() => {
     const player = playerRef.current;
-    if (!player?.getPlayerState) return;
+    if (!player || !readyRef.current) return;
     try {
       if (isPlaying) {
-        player.playVideo();
+        tryPlay(player);
       } else {
         player.pauseVideo();
       }
     } catch { /* ignore */ }
-  }, [isPlaying]);
+  }, [isPlaying, tryPlay]);
 
   return (
-    <div ref={containerRef} className={className} style={{ width: "100%", height: "100%" }} />
+    <div className={className} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden" }}>
+      {/* Scale iframe wider (16:9 → square) so video fills height and sides clip */}
+      <div
+        ref={containerRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "177.78%",  /* 16/9 of the square height */
+          height: "100%",
+        }}
+      />
+      {/* Hide YouTube branding overlay */}
+      <style>{`
+        .ytp-chrome-top,
+        .ytp-show-cards-title,
+        .ytp-pause-overlay,
+        .ytp-watermark {
+          display: none !important;
+        }
+      `}</style>
+    </div>
   );
 }

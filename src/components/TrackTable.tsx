@@ -18,7 +18,8 @@ import { useNavigationStore } from "../stores/navigationStore";
 import { TrackInfoModal } from "./TrackInfoModal";
 import { ArtworkSearchModal } from "./ArtworkSearchModal";
 import { TagSearchModal } from "./TagSearchModal";
-import { revealInFinder, playSimilar, startRadio, findMissingTags } from "../lib/commands";
+import { revealInFinder, playSimilar, startRadio, findMissingTags, getPlaylists, addTracksToPlaylist } from "../lib/commands";
+import type { Playlist } from "../lib/types";
 
 const columnHelper = createColumnHelper<Track>();
 
@@ -146,6 +147,8 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const [flashTrackId, setFlashTrackId] = useState<number | null>(null);
   const [findingTags, setFindingTags] = useState(false);
   const [tagSearchTrack, setTagSearchTrack] = useState<Track | null>(null);
+  const [playlistSubmenu, setPlaylistSubmenu] = useState<Playlist[] | null>(null);
+  const [playlistSubmenuOpen, setPlaylistSubmenuOpen] = useState(false);
   const typeAheadRef = useRef("");
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -300,7 +303,10 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   // Close context menu on any click or scroll
   useEffect(() => {
     if (!contextMenu) return;
-    const close = () => setContextMenu(null);
+    const close = () => {
+      setContextMenu(null);
+      setPlaylistSubmenuOpen(false);
+    };
     document.addEventListener("click", close);
     document.addEventListener("scroll", close, true);
     return () => {
@@ -632,6 +638,68 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             >
               Play from Here
             </button>
+            <div className="my-1 border-t border-n-700" />
+            {/* Add to Playlist submenu */}
+            <div
+              className="relative"
+              onMouseEnter={() => {
+                if (!playlistSubmenu) {
+                  getPlaylists().then((pls) => {
+                    setPlaylistSubmenu(pls.filter((p) => !p.isFolder && !p.isSmart));
+                  });
+                }
+                setPlaylistSubmenuOpen(true);
+              }}
+              onMouseLeave={() => setPlaylistSubmenuOpen(false)}
+            >
+              <button className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700 flex items-center justify-between">
+                Add to Playlist
+                <span className="text-n-500 ml-2">&#9656;</span>
+              </button>
+              {playlistSubmenuOpen && playlistSubmenu && (
+                <div
+                  ref={(el) => {
+                    if (!el) return;
+                    const rect = el.getBoundingClientRect();
+                    if (rect.right > window.innerWidth) {
+                      el.style.left = "auto";
+                      el.style.right = "100%";
+                      el.style.marginRight = "2px";
+                      el.style.marginLeft = "0";
+                    }
+                    if (rect.bottom > window.innerHeight) {
+                      el.style.top = "auto";
+                      el.style.bottom = "0";
+                    }
+                  }}
+                  className="absolute left-full top-0 ml-0.5 min-w-[180px] max-h-[300px] overflow-y-auto py-1 bg-n-800 border border-n-700 rounded-lg shadow-xl text-xs z-[51]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {playlistSubmenu.length === 0 ? (
+                    <span className="block px-3 py-1.5 text-n-500 italic">No playlists</span>
+                  ) : (
+                    playlistSubmenu.map((pl) => (
+                      <button
+                        key={pl.id}
+                        className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700 truncate"
+                        onClick={() => {
+                          const ids = selectedIndices.size > 1
+                            ? Array.from(selectedIndices).map((i) => rows[i]?.original.id).filter(Boolean) as number[]
+                            : [track.id];
+                          addTracksToPlaylist(pl.id, ids).then(() => {
+                            useNavigationStore.getState().requestSidebarRefresh();
+                          }).catch(console.error);
+                          setContextMenu(null);
+                          setPlaylistSubmenuOpen(false);
+                        }}
+                      >
+                        {pl.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <div className="my-1 border-t border-n-700" />
             <button
               className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"

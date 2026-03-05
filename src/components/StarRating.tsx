@@ -31,11 +31,11 @@ export function StarRating({ trackId, rating }: StarRatingProps) {
       {[1, 2, 3, 4, 5].map((star) => (
         <span
           key={star}
-          className={`text-[11px] leading-none ${
+          className={`text-[11px] leading-none px-[1px] py-1 ${
             star <= displayStars ? "text-accent" : "text-n-600"
           } hover:text-accent`}
           onMouseEnter={() => setHoverStar(star)}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
           onClick={(e) => handleClick(star, e)}
           onDoubleClick={(e) => e.stopPropagation()}
         >

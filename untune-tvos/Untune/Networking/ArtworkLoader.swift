@@ -2,13 +2,12 @@ import Foundation
 import SwiftUI
 
 /// Loads and caches artwork images from the desktop sync server
-@Observable
-class ArtworkLoader {
+actor ArtworkLoader {
     static let shared = ArtworkLoader()
 
-    private let memoryCache = NSCache<NSString, PlatformImage>()
+    private let memoryCache = NSCache<NSString, UIImage>()
     private let cacheDir: URL
-    private var inflightRequests: [String: [CheckedContinuation<PlatformImage?, Never>]] = [:]
+    private var inflightTasks: [String: Task<UIImage?, Never>] = [:]
 
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -17,8 +16,8 @@ class ArtworkLoader {
         memoryCache.countLimit = 200
     }
 
-    /// Get artwork image by hash, checking memory cache → disk cache → network fetch
-    func image(forHash hash: String, baseURL: String? = nil, authToken: String? = nil) async -> PlatformImage? {
+    /// Get artwork image by hash, checking memory cache -> disk cache -> network fetch
+    func image(forHash hash: String, baseURL: String? = nil, authToken: String? = nil) async -> UIImage? {
         let key = hash as NSString
 
         // 1. Memory cache
@@ -29,7 +28,7 @@ class ArtworkLoader {
         // 2. Disk cache
         let diskPath = cacheDir.appendingPathComponent("\(hash).jpg")
         if let data = try? Data(contentsOf: diskPath),
-           let image = PlatformImage(data: data) {
+           let image = UIImage(data: data) {
             memoryCache.setObject(image, forKey: key)
             return image
         }
@@ -38,26 +37,21 @@ class ArtworkLoader {
         guard let baseURL, let authToken else { return nil }
 
         // Coalesce duplicate requests for the same hash
-        if inflightRequests[hash] != nil {
-            return await withCheckedContinuation { continuation in
-                inflightRequests[hash]?.append(continuation)
-            }
+        if let existingTask = inflightTasks[hash] {
+            return await existingTask.value
         }
 
-        inflightRequests[hash] = []
-
-        let image = await fetchFromNetwork(hash: hash, baseURL: baseURL, authToken: authToken)
-
-        // Resume all waiting continuations
-        let waiters = inflightRequests.removeValue(forKey: hash) ?? []
-        for waiter in waiters {
-            waiter.resume(returning: image)
+        let task = Task<UIImage?, Never> {
+            await fetchFromNetwork(hash: hash, baseURL: baseURL, authToken: authToken)
         }
+        inflightTasks[hash] = task
 
+        let image = await task.value
+        inflightTasks.removeValue(forKey: hash)
         return image
     }
 
-    private func fetchFromNetwork(hash: String, baseURL: String, authToken: String) async -> PlatformImage? {
+    private func fetchFromNetwork(hash: String, baseURL: String, authToken: String) async -> UIImage? {
         let urlString = "\(baseURL)/api/artwork/\(hash)"
         guard let url = URL(string: urlString) else { return nil }
 
@@ -68,7 +62,7 @@ class ArtworkLoader {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode),
-                  let image = PlatformImage(data: data) else {
+                  let image = UIImage(data: data) else {
                 return nil
             }
 
@@ -86,6 +80,3 @@ class ArtworkLoader {
         }
     }
 }
-
-// Use UIImage on tvOS
-typealias PlatformImage = UIImage
