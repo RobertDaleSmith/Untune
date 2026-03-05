@@ -1,0 +1,41 @@
+name: Untune
+options:
+  bundleIdPrefix: com.untune
+  deploymentTarget:
+    tvOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "7.0.0"
+
+targets:
+  Untune:
+    type: application
+    platform: tvOS
+    sources:
+      - path: Untune
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.untune.tvos
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TVOS_DEPLOYMENT_TARGET: "18.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+    dependencies:
+      - package: GRDB
+    info:
+      path: Untune/Info.plist
+      properties:
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: "Untune needs local network access to discover and stream music from your desktop library."
+        NSBonjourServices:
+          - "_untune._tcp"
+        UILaunchScreen: {}

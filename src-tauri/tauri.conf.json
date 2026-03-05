@@ -26,6 +26,13 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["untune"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
@@ -37,7 +44,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "scripts/*": "scripts/"
+      "scripts/*": "scripts/",
+      "bin/*": "bin/"
     },
     "macOS": {
       "signingIdentity": "-",

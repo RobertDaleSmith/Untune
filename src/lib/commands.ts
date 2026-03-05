@@ -519,6 +519,42 @@ export async function isSpeaking(): Promise<boolean> {
   return invoke<boolean>("is_speaking");
 }
 
+// --- URL Download ---
+
+export async function queueUrlDownload(url: string): Promise<void> {
+  return invoke<void>("queue_url_download", { url });
+}
+
+export interface FindTagsResult {
+  updated: number;
+  total: number;
+}
+
+export async function findMissingTags(trackIds: number[]): Promise<FindTagsResult> {
+  return invoke<FindTagsResult>("find_missing_tags", { trackIds });
+}
+
+export interface TagSearchResult {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  albumArtist: string | null;
+  year: number | null;
+  trackNumber: number | null;
+  trackCount: number | null;
+  discNumber: number | null;
+  genre: string | null;
+  releaseType: string | null;
+}
+
+export async function searchTrackTags(artist: string, title: string): Promise<TagSearchResult[]> {
+  return invoke<TagSearchResult[]>("search_track_tags", { artist, title });
+}
+
+export async function applyTrackTags(trackId: number, tags: TagSearchResult): Promise<Track> {
+  return invoke<Track>("apply_track_tags", { trackId, tags });
+}
+
 // --- Sync ---
 
 export async function startSyncServer(): Promise<void> {

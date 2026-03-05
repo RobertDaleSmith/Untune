@@ -7,6 +7,7 @@ import {
   formatDate,
   formatFileSize,
 } from "../utils/formatters";
+import { TagSearchModal } from "./TagSearchModal";
 
 interface TrackInfoModalProps {
   track: Track;
@@ -58,11 +59,13 @@ export function TrackInfoModal({
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [localTrack, setLocalTrack] = useState<Track>(track);
   const [tagging, setTagging] = useState(false);
+  const [showTagSearch, setShowTagSearch] = useState(false);
 
   // Sync local track when the prop changes (e.g. prev/next navigation)
   useEffect(() => {
     setLocalTrack(track);
     setTagging(false);
+    setShowTagSearch(false);
   }, [track]);
 
   useEffect(() => {
@@ -209,6 +212,16 @@ export function TrackInfoModal({
             <InfoRow label="Composer" value={localTrack.composer} />
             <InfoRow label="Grouping" value={localTrack.grouping} />
             <InfoRow label="Comments" value={localTrack.comments} />
+            {localTrack.artist && (
+              <div className="flex justify-end mt-1">
+                <button
+                  onClick={() => setShowTagSearch(true)}
+                  className="px-3 py-1 text-[11px] rounded-md bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+                >
+                  Find Tags...
+                </button>
+              </div>
+            )}
           </Section>
 
           <Section title="Details">
@@ -318,6 +331,12 @@ export function TrackInfoModal({
             <InfoRow label="File Path" value={localTrack.filePath} />
             <InfoRow label="Persistent ID" value={localTrack.persistentId} />
             <InfoRow label="Artwork Hash" value={localTrack.artworkHash} />
+            {localTrack.sourceUrl && (
+              <InfoRow label="Source URL" value={
+                <a href={localTrack.sourceUrl} target="_blank" rel="noopener noreferrer"
+                   className="text-accent hover:underline">{localTrack.sourceUrl}</a>
+              } />
+            )}
           </Section>
         </div>
 
@@ -331,6 +350,16 @@ export function TrackInfoModal({
           </button>
         </div>
       </div>
+      {showTagSearch && (
+        <TagSearchModal
+          track={localTrack}
+          onApply={(updated) => {
+            setLocalTrack(updated);
+            setShowTagSearch(false);
+          }}
+          onClose={() => setShowTagSearch(false)}
+        />
+      )}
     </div>
   );
 }

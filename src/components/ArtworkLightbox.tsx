@@ -6,6 +6,8 @@ import { SyncedLyrics } from "./SyncedLyrics";
 import { AppIcon } from "./AppIcon";
 import { Visualizer, ALL_MODES } from "./Visualizer";
 import type { VisualizerMode } from "./Visualizer";
+import { extractYouTubeVideoId } from "../utils/youtube";
+import { YouTubePlayer } from "./YouTubePlayer";
 
 interface TrackInfo {
   title?: string | null;
@@ -20,6 +22,7 @@ interface ArtworkLightboxProps {
   originRect: DOMRect;
   trackInfo?: TrackInfo;
   duration: number | null;
+  sourceUrl?: string | null;
   onClose: () => void;
 }
 
@@ -31,6 +34,7 @@ export function ArtworkLightbox({
   originRect,
   trackInfo,
   duration,
+  sourceUrl,
   onClose,
 }: ArtworkLightboxProps) {
   const [embeddedArtworks, setEmbeddedArtworks] = useState<string[]>([]);
@@ -57,10 +61,12 @@ export function ArtworkLightbox({
     () => localStorage.getItem("lightbox-lyrics") !== "false",
   );
   const [artColor, setArtColor] = useState<[number, number, number]>([255, 255, 255]);
+  const [videoVisible, setVideoVisible] = useState(false);
+  const videoId = sourceUrl ? extractYouTubeVideoId(sourceUrl) : null;
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // Progress bar seek state
-  const { position: playbackPosition, duration: playbackDuration, seek } = usePlaybackStore();
+  const { position: playbackPosition, duration: playbackDuration, seek, isPlaying: playbackIsPlaying } = usePlaybackStore();
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingBarRef = useRef(false);
   const lastBarSeekRef = useRef(0);
@@ -219,10 +225,13 @@ export function ArtworkLightbox({
       if (e.key === "l" || e.key === "L") {
         setLyricsVisible((prev) => !prev);
       }
+      if ((e.key === "y" || e.key === "Y") && videoId) {
+        setVideoVisible((prev) => !prev);
+      }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [close]);
+  }, [close, videoId]);
 
   // Auto-hide controls after mouse idle
   useEffect(() => {
@@ -376,6 +385,25 @@ export function ArtworkLightbox({
           </div>
         )}
       </div>
+      {videoId && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setVideoVisible((prev) => !prev);
+          }}
+          className={`p-2 rounded-full transition-colors ${
+            videoVisible
+              ? "bg-white/20 text-white"
+              : "bg-white/10 text-white/50 hover:text-white/80"
+          }`}
+          title="Toggle video (Y)"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+        </button>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -478,8 +506,19 @@ export function ArtworkLightbox({
 
         {toggleButtons}
 
-        {/* Left: artwork */}
-        {currentSrc ? (
+        {/* Left: artwork or video */}
+        {videoVisible && videoId ? (
+          <div
+            className="fixed rounded-lg shadow-2xl overflow-hidden"
+            style={containerStyle}
+          >
+            <YouTubePlayer
+              videoId={videoId}
+              position={playbackPosition}
+              isPlaying={playbackIsPlaying}
+            />
+          </div>
+        ) : currentSrc ? (
           <img
             src={currentSrc}
             alt="Artwork"
@@ -687,7 +726,18 @@ export function ArtworkLightbox({
 
       {toggleButtons}
 
-      {currentSrc ? (
+      {videoVisible && videoId ? (
+        <div
+          className="fixed rounded-lg shadow-2xl overflow-hidden"
+          style={containerStyle}
+        >
+          <YouTubePlayer
+            videoId={videoId}
+            position={playbackPosition}
+            isPlaying={playbackIsPlaying}
+          />
+        </div>
+      ) : currentSrc ? (
         <img
           src={currentSrc}
           alt="Artwork"

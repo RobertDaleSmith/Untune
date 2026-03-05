@@ -3,8 +3,19 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Waves needs microphone access for voice commands.</string>
+	<string>Untune needs microphone access for voice commands.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Waves uses speech recognition for voice commands.</string>
+	<string>Untune uses speech recognition for voice commands.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.untune.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>untune</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

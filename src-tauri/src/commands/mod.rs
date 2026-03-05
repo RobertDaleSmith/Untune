@@ -12,3 +12,4 @@ pub mod preferences;
 pub mod lyrics;
 pub mod speech;
 pub mod sync;
+pub mod url_download;

@@ -73,6 +73,10 @@ fn migrate_sync(conn: &Connection) {
     );
 }
 
+fn migrate_source_url(conn: &Connection) {
+    let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN source_url TEXT");
+}
+
 pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "
@@ -177,5 +181,6 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     migrate_ai_tags(conn);
     migrate_bios(conn);
     migrate_sync(conn);
+    migrate_source_url(conn);
     Ok(())
 }

@@ -84,6 +84,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let db = Database::init(app.handle())?;
 
@@ -268,6 +269,10 @@ pub fn run() {
                             .item(&MenuItemBuilder::with_id("export-playlist-m3u", "Export Playlist as M3U...")
                                 .build(handle)?)
                             .build()?)
+                        .separator()
+                        .item(&MenuItemBuilder::with_id("add-from-url", "Add from URL...")
+                            .accelerator("CmdOrCtrl+U")
+                            .build(handle)?)
                         .separator()
                         .item(&PredefinedMenuItem::close_window(handle, None)?)
                         .build()?,
@@ -466,6 +471,7 @@ pub fn run() {
                 "export-ai-tags" => { let _ = app.emit("menu-export-ai-tags", ()); }
                 "import-ai-tags" => { let _ = app.emit("menu-import-ai-tags", ()); }
                 "export-playlist-m3u" => { let _ = app.emit("menu-export-playlist-m3u", ()); }
+                "add-from-url" => { let _ = app.emit("menu-add-from-url", ()); }
                 "toggle-mini-player" => { let _ = app.emit("toggle-mini-player", ()); }
                 "pb-toggle" => { let _ = app.emit("media-toggle", ()); }
                 "pb-goto" => { let _ = app.emit("media-goto-current", ()); }
@@ -650,6 +656,10 @@ pub fn run() {
             commands::sync::get_sync_status,
             commands::sync::unpair_device,
             commands::sync::set_sync_playlists,
+            commands::url_download::queue_url_download,
+            commands::url_download::find_missing_tags,
+            commands::url_download::search_track_tags,
+            commands::url_download::apply_track_tags,
             set_traffic_lights_visible,
         ])
         .run(tauri::generate_context!())

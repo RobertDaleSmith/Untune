@@ -21,7 +21,9 @@ import { MiniPlayer } from "./components/MiniPlayer";
 import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
 import { QueuePanel } from "./components/QueuePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { AddFromUrlDialog } from "./components/AddFromUrlDialog";
 import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
+import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 
 function App() {
   const onDrag = useDragRegion();
@@ -48,6 +50,8 @@ function App() {
   const isMiniPlayer = useThemeStore((s) => s.isMiniPlayer);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAddFromUrl, setShowAddFromUrl] = useState(false);
+  const [deepLinkUrl, setDeepLinkUrl] = useState<string | null>(null);
 
   const setTracksLoading = useLibraryStore((s) => s.setTracksLoading);
 
@@ -117,11 +121,32 @@ function App() {
     useActivityStore.getState().init();
   }, []);
 
+  // Listen for deep-link URLs (untune://add?url=...)
+  useEffect(() => {
+    const unlisten = onOpenUrl((urls) => {
+      for (const raw of urls) {
+        try {
+          const parsed = new URL(raw);
+          if (parsed.host === "add") {
+            const targetUrl = parsed.searchParams.get("url");
+            if (targetUrl) {
+              setDeepLinkUrl(targetUrl);
+              setShowAddFromUrl(true);
+            }
+          }
+        } catch {
+          // ignore malformed URLs
+        }
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
   // Reload tracks when a background task completes (artwork, ai-tagging)
   useEffect(() => {
     return useActivityStore.subscribe((s, prev) => {
       if (s.lastCompletedTaskId && s.lastCompletedTaskId !== prev.lastCompletedTaskId) {
-        if (s.lastCompletedTaskId === "artwork" || s.lastCompletedTaskId === "ai-tagging") {
+        if (s.lastCompletedTaskId === "artwork" || s.lastCompletedTaskId === "ai-tagging" || s.lastCompletedTaskId === "find-tags" || s.lastCompletedTaskId === "url-download") {
           loadTracks();
         }
       }
@@ -298,6 +323,7 @@ function App() {
           console.error("Import AI tags failed:", err);
         }
       }),
+      listen("menu-add-from-url", () => setShowAddFromUrl(true)),
       listen("menu-export-playlist-m3u", async () => {
         const nav = useNavigationStore.getState();
         let playlistId = nav.view === "playlist" ? nav.playlistId : null;
@@ -369,6 +395,9 @@ function App() {
       } else if (e.key === "," && e.metaKey) {
         e.preventDefault();
         setShowSettings((v) => !v);
+      } else if (e.key === "u" && e.metaKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setShowAddFromUrl(true);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -707,6 +736,11 @@ function App() {
       <AssistantApiKeyModal />
       {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      <AddFromUrlDialog
+        open={showAddFromUrl}
+        onClose={() => { setShowAddFromUrl(false); setDeepLinkUrl(null); }}
+        initialUrl={deepLinkUrl ?? undefined}
+      />
     </div>
   );
 }

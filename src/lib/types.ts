@@ -40,6 +40,7 @@ export interface Track {
   danceability: number | null;
   acousticness: number | null;
   aiTaggedAt: string | null;
+  sourceUrl: string | null;
 }
 
 export interface Playlist {

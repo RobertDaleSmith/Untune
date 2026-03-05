@@ -17,7 +17,8 @@ import { StarRating } from "./StarRating";
 import { useNavigationStore } from "../stores/navigationStore";
 import { TrackInfoModal } from "./TrackInfoModal";
 import { ArtworkSearchModal } from "./ArtworkSearchModal";
-import { revealInFinder, playSimilar, startRadio } from "../lib/commands";
+import { TagSearchModal } from "./TagSearchModal";
+import { revealInFinder, playSimilar, startRadio, findMissingTags } from "../lib/commands";
 
 const columnHelper = createColumnHelper<Track>();
 
@@ -143,6 +144,8 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const setDraggedTrackIds = useLibraryStore((s) => s.setDraggedTrackIds);
   const { navigateToAlbum, navigateToArtist } = useNavigationStore();
   const [flashTrackId, setFlashTrackId] = useState<number | null>(null);
+  const [findingTags, setFindingTags] = useState(false);
+  const [tagSearchTrack, setTagSearchTrack] = useState<Track | null>(null);
   const typeAheadRef = useRef("");
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -664,6 +667,27 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                 Find Album Artwork...
               </button>
             )}
+            <button
+              className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700 disabled:opacity-40"
+              disabled={findingTags}
+              onClick={() => {
+                if (selectedIndices.size > 1) {
+                  const ids = Array.from(selectedIndices).map((i) => rows[i]?.original.id).filter(Boolean) as number[];
+                  setContextMenu(null);
+                  setFindingTags(true);
+                  findMissingTags(ids).catch((err) => {
+                    console.error("Find missing tags failed:", err);
+                  }).finally(() => {
+                    setFindingTags(false);
+                  });
+                } else {
+                  setTagSearchTrack(track);
+                  setContextMenu(null);
+                }
+              }}
+            >
+              {findingTags ? "Finding Tags..." : selectedIndices.size > 1 ? `Find Missing Tags (${selectedIndices.size})` : "Find Tags..."}
+            </button>
             <div className="my-1 border-t border-n-700" />
             <button
               className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
@@ -750,6 +774,21 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             );
             setArtworkSearchTrack(null);
           }}
+        />
+      )}
+
+      {/* Tag search modal (single track) */}
+      {tagSearchTrack && (
+        <TagSearchModal
+          track={tagSearchTrack}
+          onApply={(updated) => {
+            const store = useLibraryStore.getState();
+            store.setTracks(
+              store.tracks.map((t) => (t.id === updated.id ? updated : t)),
+            );
+            setTagSearchTrack(null);
+          }}
+          onClose={() => setTagSearchTrack(null)}
         />
       )}
     </div>

@@ -7,6 +7,8 @@ import { save, open } from "@tauri-apps/plugin-dialog";
 import { ArtworkLightbox } from "./ArtworkLightbox";
 import { SmartPlaylistEditor } from "./SmartPlaylistEditor";
 import type { Playlist } from "../lib/types";
+import { extractYouTubeVideoId } from "../utils/youtube";
+import { YouTubePlayer } from "./YouTubePlayer";
 
 const libraryIcons: Record<View, React.ReactNode> = {
   songs: (
@@ -139,11 +141,16 @@ export function Sidebar() {
 
   const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
   const artworkUrl = usePlaybackStore((s) => s.currentArtworkUrl);
+  const playbackPosition = usePlaybackStore((s) => s.position);
+  const playbackIsPlaying = usePlaybackStore((s) => s.isPlaying);
   const tracks = useLibraryStore((s) => s.tracks);
 
   const currentTrack = currentTrackId
     ? tracks.find((t) => t.id === currentTrackId)
     : null;
+
+  const [showVideo, setShowVideo] = useState(false);
+  const videoId = currentTrack?.sourceUrl ? extractYouTubeVideoId(currentTrack.sourceUrl) : null;
 
   const isImporting = useLibraryStore((s) => s.isImporting);
   const sidebarRefresh = useNavigationStore((s) => s.sidebarRefresh);
@@ -768,22 +775,54 @@ export function Sidebar() {
       <div className="shrink-0 border-t border-n-800">
         <div
           ref={artworkRef}
-          onClick={openLightbox}
-          className={`aspect-square w-full overflow-hidden bg-n-800${currentTrackId ? " cursor-pointer" : ""}`}
+          onClick={showVideo ? undefined : openLightbox}
+          className={`aspect-square w-full overflow-hidden bg-n-800 relative${currentTrackId && !showVideo ? " cursor-pointer" : ""}`}
         >
-          {artworkUrl ? (
-            <img
-              src={artworkUrl}
-              alt={currentTrack?.album ?? currentTrack?.title ?? ""}
-              className="w-full h-full object-cover"
-            />
+          {showVideo && videoId ? (
+            <>
+              <YouTubePlayer
+                videoId={videoId}
+                position={playbackPosition}
+                isPlaying={playbackIsPlaying}
+              />
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowVideo(false); }}
+                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors z-10"
+                title="Close video"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                  <path d="M18 6L6 18" /><path d="M6 6l12 12" />
+                </svg>
+              </button>
+            </>
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-n-600">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="12" cy="12" r="10" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </div>
+            <>
+              {artworkUrl ? (
+                <img
+                  src={artworkUrl}
+                  alt={currentTrack?.album ?? currentTrack?.title ?? ""}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-n-600">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </div>
+              )}
+              {videoId && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowVideo(true); }}
+                  className="absolute bottom-1.5 right-1.5 w-6 h-6 flex items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors"
+                  title="Play music video"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -795,6 +834,7 @@ export function Sidebar() {
           originRect={lightboxRect}
           trackInfo={currentTrack ? { title: currentTrack.title, artist: currentTrack.artist, album: currentTrack.album, year: currentTrack.year } : undefined}
           duration={currentTrack?.duration ?? null}
+          sourceUrl={currentTrack?.sourceUrl ?? null}
           onClose={() => setLightboxOpen(false)}
         />
       )}

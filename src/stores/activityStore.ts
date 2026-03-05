@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type ActivityTaskId = "artwork" | "ai-tagging" | "import";
+export type ActivityTaskId = "artwork" | "ai-tagging" | "import" | "find-tags" | "url-download";
 
 export interface ActivityTask {
   id: ActivityTaskId;
@@ -133,7 +133,36 @@ export const useActivityStore = create<ActivityState>((set) => ({
         },
       );
 
-      unlisteners = [u1, u2, u3];
+      const u4 = await listen<{ current: number; total: number; updated: number; currentTrack: string }>(
+        "find-tags-progress",
+        (e) => {
+          const { current, total, updated, currentTrack } = e.payload;
+          const msg = currentTrack === "Done"
+            ? `Updated ${updated} of ${total} tracks`
+            : currentTrack;
+          if (current >= total && currentTrack === "Done") {
+            upsert("find-tags", "Find Missing Tags", current, total, msg);
+            markComplete("find-tags");
+          } else {
+            upsert("find-tags", "Find Missing Tags", current, total, msg);
+          }
+        },
+      );
+
+      const u5 = await listen<{ phase: string; message: string }>(
+        "url-download-progress",
+        (e) => {
+          const { phase, message } = e.payload;
+          if (phase === "complete" || phase === "error") {
+            upsert("url-download", "URL Download", 1, 1, message);
+            markComplete("url-download");
+          } else {
+            upsert("url-download", "URL Download", 0, 1, message);
+          }
+        },
+      );
+
+      unlisteners = [u1, u2, u3, u4, u5];
     };
 
     setup();

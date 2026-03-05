@@ -6,6 +6,8 @@ pub mod scanner;
 pub mod matcher;
 pub mod artwork;
 pub mod smart_criteria;
+pub mod musicbrainz;
+pub mod url_download;
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -141,6 +143,28 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
         }
         log::info!("Preserved {} AI tag records", ai_tags_by_pid.len());
 
+        // Preserve source_url from previous import
+        let mut source_urls_by_path: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare("SELECT file_path, source_url FROM tracks WHERE source_url IS NOT NULL")
+                .map_err(|e| format!("Source URL preserve query failed: {}", e))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let fp: String = row.get(0)?;
+                    let url: String = row.get(1)?;
+                    Ok((fp, url))
+                })
+                .map_err(|e| format!("Source URL preserve failed: {}", e))?;
+            for row in rows {
+                if let Ok((fp, url)) = row {
+                    source_urls_by_path.insert(fp, url);
+                }
+            }
+        }
+        log::info!("Preserved {} source URLs", source_urls_by_path.len());
+
         db::clear_tracks(&conn).map_err(|e| format!("Clear failed: {}", e))?;
         db::batch_insert_tracks(&mut conn, &merged).map_err(|e| format!("Insert failed: {}", e))?;
 
@@ -192,6 +216,23 @@ pub fn run_import(app: &AppHandle) -> Result<ImportStats, String> {
             count
         };
         log::info!("Restored {} AI tag records from previous import", ai_restored);
+
+        // Restore source_url
+        let urls_restored = {
+            let tx = conn.transaction().map_err(|e| format!("Tx failed: {}", e))?;
+            let mut count = 0u64;
+            {
+                let mut stmt = tx
+                    .prepare("UPDATE tracks SET source_url = ?1 WHERE file_path = ?2 AND source_url IS NULL")
+                    .map_err(|e| e.to_string())?;
+                for (fp, url) in &source_urls_by_path {
+                    count += stmt.execute(rusqlite::params![url, fp]).unwrap_or(0) as u64;
+                }
+            }
+            tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+            count
+        };
+        log::info!("Restored {} source URLs from previous import", urls_restored);
 
         // Auto-restore AI tags from backup file (created during reset_library)
         if let Ok(app_dir) = app.path().app_data_dir() {

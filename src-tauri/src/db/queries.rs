@@ -11,7 +11,7 @@ pub const TRACK_COLUMNS: &str =
      sort_title, sort_artist, sort_album, sort_album_artist, sort_composer,
      file_path, artwork_hash, has_artwork,
      mood, energy, vibe_tags, bpm, danceability, acousticness, ai_tagged_at,
-     updated_at";
+     updated_at, source_url";
 
 pub const TRACK_COLUMNS_PREFIXED: &str =
     "t.id, t.persistent_id, t.title, t.artist, t.album_artist, t.album, t.genre, t.composer,
@@ -21,7 +21,7 @@ pub const TRACK_COLUMNS_PREFIXED: &str =
      t.sort_title, t.sort_artist, t.sort_album, t.sort_album_artist, t.sort_composer,
      t.file_path, t.artwork_hash, t.has_artwork,
      t.mood, t.energy, t.vibe_tags, t.bpm, t.danceability, t.acousticness, t.ai_tagged_at,
-     t.updated_at";
+     t.updated_at, t.source_url";
 
 pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
     Ok(Track {
@@ -67,6 +67,7 @@ pub fn map_track_row(row: &Row) -> Result<Track, rusqlite::Error> {
         acousticness: row.get(39)?,
         ai_tagged_at: row.get(40)?,
         updated_at: row.get(41)?,
+        source_url: row.get(42)?,
     })
 }
 
