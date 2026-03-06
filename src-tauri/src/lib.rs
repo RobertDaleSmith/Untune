@@ -49,6 +49,51 @@ fn set_traffic_lights_visible(window: tauri::Window, visible: bool) {
     }
 }
 
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
+fn set_app_icon(app: tauri::AppHandle, variant: String) -> Result<(), String> {
+    use cocoa::base::{id, nil};
+    use objc::{msg_send, sel, sel_impl, class};
+
+    let filename = match variant.as_str() {
+        "dark" => "icon-dark.png",
+        _ => "icon-light.png",
+    };
+
+    // Try bundled resource first, fall back to dev path
+    let icon_path = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("icons").join(filename))
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("icons")
+                .join(filename);
+            if dev_path.exists() { Some(dev_path) } else { None }
+        })
+        .ok_or_else(|| format!("Icon file not found: {}", filename))?;
+
+    let path_str = icon_path.to_string_lossy().to_string();
+    let c_path = std::ffi::CString::new(path_str.as_str()).map_err(|e| e.to_string())?;
+
+    unsafe {
+        let ns_string: id = msg_send![class!(NSString), alloc];
+        let ns_string: id = msg_send![ns_string, initWithUTF8String: c_path.as_ptr()];
+        let ns_image: id = msg_send![class!(NSImage), alloc];
+        let ns_image: id = msg_send![ns_image, initWithContentsOfFile: ns_string];
+        if ns_image == nil {
+            return Err("Failed to load icon image".to_string());
+        }
+        let ns_app: id = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![ns_app, setApplicationIconImage: ns_image];
+    }
+
+    Ok(())
+}
+
 struct ThemeMenuItems {
     light: CheckMenuItem<tauri::Wry>,
     dark: CheckMenuItem<tauri::Wry>,
@@ -156,11 +201,21 @@ pub fn run() {
             app.manage(assistant);
             app.manage(AiTaggingState::new());
 
-            // Set window/dock icon
+            // Set window/dock icon and ensure shadow
             if let Some(window) = app.get_webview_window("main") {
                 let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
                     .expect("failed to load icon");
                 let _ = window.set_icon(icon);
+
+                #[cfg(target_os = "macos")]
+                {
+                    use objc::{msg_send, sel, sel_impl};
+                    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+                    unsafe {
+                        let _: () = msg_send![ns_window, setHasShadow: true];
+                        let _: () = msg_send![ns_window, invalidateShadow];
+                    }
+                }
             }
 
             // Build theme menu items (stored for radio-toggle behavior)
@@ -661,6 +716,7 @@ pub fn run() {
             commands::url_download::search_track_tags,
             commands::url_download::apply_track_tags,
             set_traffic_lights_visible,
+            set_app_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

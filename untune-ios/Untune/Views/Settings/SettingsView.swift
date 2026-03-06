@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(PairingManager.self) private var pairingManager
@@ -14,6 +15,7 @@ struct SettingsView: View {
     @State private var showPlaylistPicker = false
 
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
+    @State private var currentIconName: String? = UIApplication.shared.alternateIconName
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -58,7 +60,69 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("App Icon")
+                    .font(.subheadline)
+                HStack(spacing: 16) {
+                    iconOption(name: nil, label: "Default")
+                    iconOption(name: "Light", label: "Light")
+                    iconOption(name: "Dark", label: "Dark")
+                }
+            }
+            .padding(.vertical, 4)
         }
+    }
+
+    private func iconOption(name: String?, label: String) -> some View {
+        let isSelected = currentIconName == name
+        let imageName: String = {
+            switch name {
+            case "Light": return "icon-light"
+            case "Dark": return "icon-dark"
+            default: return "AppIcon"
+            }
+        }()
+
+        return Button {
+            UIApplication.shared.setAlternateIconName(name) { error in
+                if error == nil {
+                    currentIconName = name
+                }
+            }
+        } label: {
+            VStack(spacing: 6) {
+                if name == nil, let primaryIcon = Bundle.main.icon {
+                    Image(uiImage: primaryIcon)
+                        .resizable()
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 13.5))
+                } else {
+                    Image(uiImage: loadAlternateIcon(imageName))
+                        .resizable()
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 13.5))
+                }
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 13.5)
+                    .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                    .frame(width: 64, height: 64),
+                alignment: .top
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func loadAlternateIcon(_ name: String) -> UIImage {
+        // Try @3x first, then @2x
+        if let img = UIImage(named: "\(name)@3x", in: .main, with: nil) { return img }
+        if let img = UIImage(named: "\(name)@2x", in: .main, with: nil) { return img }
+        if let img = UIImage(named: name, in: .main, with: nil) { return img }
+        return UIImage(systemName: "app.fill") ?? UIImage()
     }
 
     // MARK: - Sync Section
@@ -242,5 +306,15 @@ struct SettingsView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+}
+
+extension Bundle {
+    var icon: UIImage? {
+        guard let icons = infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let files = primary["CFBundleIconFiles"] as? [String],
+              let name = files.last else { return nil }
+        return UIImage(named: name)
     }
 }

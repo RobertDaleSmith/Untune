@@ -123,6 +123,10 @@ export async function setTrafficLightsVisible(visible: boolean): Promise<void> {
   return invoke("set_traffic_lights_visible", { visible });
 }
 
+export async function setAppIcon(variant: "light" | "dark"): Promise<void> {
+  return invoke("set_app_icon", { variant });
+}
+
 export async function revealInFinder(path: string): Promise<void> {
   return invoke("reveal_in_finder", { path });
 }

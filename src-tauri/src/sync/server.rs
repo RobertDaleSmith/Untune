@@ -136,10 +136,16 @@ async fn manifest_handler(
         .ok_or(StatusCode::UNAUTHORIZED)?.0.clone();
 
     // Get selected playlist IDs for this device (or all if none selected)
-    let playlist_ids = get_sync_playlist_ids(&conn, &device_id)?;
+    let (playlist_ids, has_selection) = get_sync_playlist_ids(&conn, &device_id)?;
 
     let playlists = fetch_sync_playlists(&conn, &playlist_ids)?;
-    let track_ids: Vec<i64> = playlists.iter().flat_map(|p| p.track_ids.clone()).collect();
+
+    // If no specific playlists selected, sync ALL tracks (not just playlist members)
+    let track_ids = if !has_selection {
+        fetch_all_track_ids(&conn)?
+    } else {
+        playlists.iter().flat_map(|p| p.track_ids.clone()).collect()
+    };
     let tracks = fetch_sync_tracks(&conn, &track_ids)?;
 
     Ok(Json(SyncManifest { playlists, tracks }))
@@ -159,16 +165,24 @@ async fn delta_handler(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let req: DeltaRequest = serde_json::from_slice(&body_bytes)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
-    let playlist_ids = get_sync_playlist_ids(&conn, &device_id)?;
+    let (playlist_ids, has_selection) = get_sync_playlist_ids(&conn, &device_id)?;
 
     let (playlists, tracks) = if let Some(ref since) = req.since {
         let playlists = fetch_updated_playlists(&conn, &playlist_ids, since)?;
-        let track_ids: Vec<i64> = playlists.iter().flat_map(|p| p.track_ids.clone()).collect();
+        let track_ids = if !has_selection {
+            fetch_all_track_ids(&conn)?
+        } else {
+            playlists.iter().flat_map(|p| p.track_ids.clone()).collect()
+        };
         let tracks = fetch_updated_tracks(&conn, &track_ids, since)?;
         (playlists, tracks)
     } else {
         let playlists = fetch_sync_playlists(&conn, &playlist_ids)?;
-        let track_ids: Vec<i64> = playlists.iter().flat_map(|p| p.track_ids.clone()).collect();
+        let track_ids = if !has_selection {
+            fetch_all_track_ids(&conn)?
+        } else {
+            playlists.iter().flat_map(|p| p.track_ids.clone()).collect()
+        };
         let tracks = fetch_sync_tracks(&conn, &track_ids)?;
         (playlists, tracks)
     };
@@ -316,7 +330,9 @@ async fn sync_complete_handler(
 
 // --- Helpers ---
 
-fn get_sync_playlist_ids(conn: &Connection, device_id: &str) -> Result<Vec<i64>, StatusCode> {
+/// Returns (playlist_ids, has_explicit_selection)
+/// Always includes folders so clients can reconstruct the hierarchy.
+fn get_sync_playlist_ids(conn: &Connection, device_id: &str) -> Result<(Vec<i64>, bool), StatusCode> {
     let mut stmt = conn
         .prepare("SELECT playlist_id FROM sync_playlist_selections WHERE device_id = ?")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -327,19 +343,44 @@ fn get_sync_playlist_ids(conn: &Connection, device_id: &str) -> Result<Vec<i64>,
         .collect();
 
     if ids.is_empty() {
-        // If no playlists selected, return all playlist IDs
+        // If no playlists selected, return all playlist IDs (including folders)
         let mut stmt = conn
-            .prepare("SELECT id FROM playlists WHERE is_folder = 0")
+            .prepare("SELECT id FROM playlists")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let all: Vec<i64> = stmt
             .query_map([], |row| row.get(0))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
             .filter_map(|r| r.ok())
             .collect();
-        Ok(all)
+        Ok((all, false))
     } else {
-        Ok(ids)
+        // Include explicitly selected playlists + all folders (for hierarchy)
+        let mut all = ids.clone();
+        let mut stmt = conn
+            .prepare("SELECT id FROM playlists WHERE is_folder = 1")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let folders: Vec<i64> = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .filter_map(|r| r.ok())
+            .collect();
+        all.extend(folders);
+        all.sort_unstable();
+        all.dedup();
+        Ok((all, true))
     }
+}
+
+fn fetch_all_track_ids(conn: &Connection) -> Result<Vec<i64>, StatusCode> {
+    let mut stmt = conn
+        .prepare("SELECT id FROM tracks")
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let ids: Vec<i64> = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(ids)
 }
 
 fn fetch_sync_playlists(
@@ -350,11 +391,11 @@ fn fetch_sync_playlists(
     for &pid in playlist_ids {
         let playlist = conn
             .query_row(
-                "SELECT id, persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count
+                "SELECT id, persistent_id, name, is_smart, is_folder, parent_id, sort_order, track_count, rules_json
                  FROM playlists WHERE id = ?",
                 rusqlite::params![pid],
                 |row| {
-                    Ok(SyncPlaylistMeta {
+                    Ok((SyncPlaylistMeta {
                         id: row.get(0)?,
                         persistent_id: row.get(1)?,
                         name: row.get(2)?,
@@ -364,27 +405,35 @@ fn fetch_sync_playlists(
                         sort_order: row.get(6)?,
                         track_count: row.get(7)?,
                         track_ids: vec![],
-                    })
+                    }, row.get::<_, Option<String>>(8)?))
                 },
             )
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        // Get track IDs for this playlist
-        let mut stmt = conn
-            .prepare(
-                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
-            )
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let track_ids: Vec<i64> = stmt
-            .query_map(rusqlite::params![pid], |row| row.get(0))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-            .filter_map(|r| r.ok())
-            .collect();
+        let (mut playlist, rules_json) = playlist;
 
-        result.push(SyncPlaylistMeta {
-            track_ids,
-            ..playlist
-        });
+        // For Untune-native smart playlists (have rules_json), evaluate dynamically
+        if playlist.is_smart && rules_json.is_some() {
+            if let Ok(tracks) = crate::smart_playlists::evaluate(conn, rules_json.as_ref().unwrap()) {
+                playlist.track_ids = tracks.iter().map(|t| t.id).collect();
+                playlist.track_count = playlist.track_ids.len() as i32;
+            }
+        } else if !playlist.is_folder {
+            // Regular playlists AND JXA-imported smart playlists (no rules_json):
+            // both store tracks in the playlist_tracks junction table
+            let mut stmt = conn
+                .prepare(
+                    "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
+                )
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            playlist.track_ids = stmt
+                .query_map(rusqlite::params![pid], |row| row.get(0))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .filter_map(|r| r.ok())
+                .collect();
+        }
+
+        result.push(playlist);
     }
     Ok(result)
 }

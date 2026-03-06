@@ -45,7 +45,9 @@
     ],
     "resources": {
       "scripts/*": "scripts/",
-      "bin/*": "bin/"
+      "bin/*": "bin/",
+      "icons/icon-light.png": "icons/icon-light.png",
+      "icons/icon-dark.png": "icons/icon-dark.png"
     },
     "macOS": {
       "signingIdentity": "-",

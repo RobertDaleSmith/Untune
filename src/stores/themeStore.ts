@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
-import { getPreference, setPreference, setTrafficLightsVisible } from "../lib/commands";
+import { getPreference, setPreference, setTrafficLightsVisible, setAppIcon } from "../lib/commands";
 
 type Theme = "light" | "dark" | "system";
 
@@ -38,6 +38,8 @@ function applyToDOM(theme: Theme) {
   } else {
     document.documentElement.setAttribute("data-theme", "light");
   }
+  // Sync dock icon with resolved theme
+  setAppIcon(resolved).catch(() => {});
 }
 
 let mediaQueryListener: (() => void) | null = null;
