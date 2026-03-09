@@ -156,6 +156,7 @@ class AudioPlayer {
         defaults.set(queue.map(\.id), forKey: StorageKey.queueTrackIds)
         defaults.set(queueIndex, forKey: StorageKey.queueIndex)
         defaults.set(position, forKey: StorageKey.position)
+        Task { await HandoffManager.shared.push(player: self) }
     }
 
     var upNext: [Track] {
@@ -194,6 +195,8 @@ class AudioPlayer {
         player?.pause()
         isPlaying = false
         nowPlayingManager.updatePlaybackState(isPlaying: false, position: position, rate: 0)
+        defaults.set(position, forKey: StorageKey.position)
+        Task { await HandoffManager.shared.push(player: self) }
     }
 
     func resume() {
@@ -368,11 +371,12 @@ class AudioPlayer {
                 rate: self.isPlaying ? 1 : 0
             )
 
-            // Save position every ~5 seconds
+            // Save position every ~5 seconds and push handoff state
             let now = ProcessInfo.processInfo.systemUptime
             if now - self.lastPositionSave >= 5 {
                 self.lastPositionSave = now
                 self.defaults.set(self.position, forKey: StorageKey.position)
+                Task { await HandoffManager.shared.push(player: self) }
             }
         }
     }

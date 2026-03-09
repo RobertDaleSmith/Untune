@@ -5,6 +5,7 @@ mod airplay;
 mod audio;
 mod commands;
 mod db;
+mod handoff;
 #[cfg(target_os = "macos")]
 mod dock_menu;
 mod import;
@@ -623,11 +624,13 @@ pub fn run() {
             commands::tracks::search_tracks,
             commands::tracks::reveal_in_finder,
             commands::tracks::set_track_rating,
+            commands::tracks::set_track_source_url,
             commands::tracks::get_smart_view_tracks,
             commands::playlists::get_playlists,
             commands::playlists::get_playlist_tracks,
             commands::playback::play_track,
             commands::playback::play_queue,
+            commands::playback::play_queue_at_position,
             commands::playback::pause_playback,
             commands::playback::resume_playback,
             commands::playback::stop_playback,
@@ -715,6 +718,12 @@ pub fn run() {
             commands::url_download::find_missing_tags,
             commands::url_download::search_track_tags,
             commands::url_download::apply_track_tags,
+            commands::handoff::generate_handoff_token,
+            commands::handoff::configure_handoff,
+            commands::handoff::get_handoff_config,
+            commands::handoff::push_handoff_state,
+            commands::handoff::pull_handoff_state,
+            commands::handoff::dismiss_handoff,
             set_traffic_lights_visible,
             set_app_icon,
         ])

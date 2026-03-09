@@ -510,6 +510,18 @@ pub fn update_track_rating(
     Ok(())
 }
 
+pub fn update_track_source_url(
+    conn: &Connection,
+    track_id: i64,
+    source_url: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks SET source_url = ?, updated_at = datetime('now') WHERE id = ?",
+        params![source_url, track_id],
+    )?;
+    Ok(())
+}
+
 pub fn record_track_played(
     conn: &Connection,
     track_id: i64,
@@ -530,6 +542,56 @@ pub fn record_track_skipped(
         params![track_id],
     )?;
     Ok(())
+}
+
+// --- Handoff lookups ---
+
+pub fn get_track_persistent_id(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT persistent_id FROM tracks WHERE id = ?",
+        params![track_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+pub fn get_track_by_persistent_id(
+    conn: &Connection,
+    persistent_id: &str,
+) -> Result<Option<Track>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {} FROM tracks WHERE persistent_id = ?",
+        TRACK_COLUMNS
+    );
+    conn.query_row(&sql, params![persistent_id], |row| map_track_row(row))
+        .optional()
+}
+
+pub fn get_playlist_persistent_id(
+    conn: &Connection,
+    playlist_id: i64,
+) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT persistent_id FROM playlists WHERE id = ?",
+        params![playlist_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+pub fn get_playlist_id_by_persistent_id(
+    conn: &Connection,
+    persistent_id: &str,
+) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT id FROM playlists WHERE persistent_id = ?",
+        params![persistent_id],
+        |row| row.get(0),
+    )
+    .optional()
 }
 
 pub fn get_genre_tracks(

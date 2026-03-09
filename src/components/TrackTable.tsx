@@ -19,6 +19,7 @@ import { TrackInfoModal } from "./TrackInfoModal";
 import { ArtworkSearchModal } from "./ArtworkSearchModal";
 import { TagSearchModal } from "./TagSearchModal";
 import { revealInFinder, playSimilar, startRadio, findMissingTags, getPlaylists, addTracksToPlaylist } from "../lib/commands";
+import { extractYouTubeVideoId } from "../utils/youtube";
 import type { Playlist } from "../lib/types";
 
 const columnHelper = createColumnHelper<Track>();
@@ -149,6 +150,8 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const [tagSearchTrack, setTagSearchTrack] = useState<Track | null>(null);
   const [playlistSubmenu, setPlaylistSubmenu] = useState<Playlist[] | null>(null);
   const [playlistSubmenuOpen, setPlaylistSubmenuOpen] = useState(false);
+  const [linkVideoTrack, setLinkVideoTrack] = useState<Track | null>(null);
+  const updateTrackSourceUrl = useLibraryStore((s) => s.updateTrackSourceUrl);
   const typeAheadRef = useRef("");
   const typeAheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -756,6 +759,15 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             >
               {findingTags ? "Finding Tags..." : selectedIndices.size > 1 ? `Find Missing Tags (${selectedIndices.size})` : "Find Tags..."}
             </button>
+            <button
+              className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
+              onClick={() => {
+                setLinkVideoTrack(track);
+                setContextMenu(null);
+              }}
+            >
+              {track.sourceUrl ? "Edit Video Link..." : "Link Video..."}
+            </button>
             <div className="my-1 border-t border-n-700" />
             <button
               className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
@@ -859,6 +871,95 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           onClose={() => setTagSearchTrack(null)}
         />
       )}
+
+      {/* Link Video dialog */}
+      {linkVideoTrack && (
+        <LinkVideoDialog
+          track={linkVideoTrack}
+          onSave={(url) => {
+            updateTrackSourceUrl(linkVideoTrack.id, url);
+            setLinkVideoTrack(null);
+          }}
+          onClose={() => setLinkVideoTrack(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function LinkVideoDialog({ track, onSave, onClose }: { track: Track; onSave: (url: string | null) => void; onClose: () => void }) {
+  const [url, setUrl] = useState(track.sourceUrl ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const trimmed = url.trim();
+  const isValid = !trimmed || extractYouTubeVideoId(trimmed) !== null;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-n-900 border border-n-700 rounded-xl w-[480px] p-6 shadow-2xl">
+        <h2 className="text-[15px] font-medium text-n-100 mb-1">Link Video</h2>
+        <p className="text-[12px] text-n-400 mb-4 truncate">
+          Attach a YouTube video to <span className="text-n-200">{track.title}</span>
+        </p>
+
+        <input
+          ref={inputRef}
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && isValid) onSave(trimmed || null);
+          }}
+          placeholder="https://youtube.com/watch?v=..."
+          className={`w-full bg-n-800 border rounded-lg px-3 py-2 text-[13px] text-n-200 placeholder-n-600 outline-none transition-colors font-mono ${
+            !isValid ? "border-red-500" : "border-n-700 focus:border-n-500"
+          }`}
+        />
+
+        {!isValid && (
+          <p className="text-red-400 text-[11px] mt-2">Not a valid YouTube URL</p>
+        )}
+
+        <div className="flex justify-between mt-4">
+          <div>
+            {track.sourceUrl && (
+              <button
+                onClick={() => onSave(null)}
+                className="px-3 py-1.5 text-[12px] text-red-400 hover:text-red-300 transition-colors"
+              >
+                Remove Link
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-[12px] text-n-400 hover:text-n-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(trimmed || null)}
+              disabled={!isValid}
+              className="px-4 py-1.5 text-[12px] bg-accent/20 text-accent rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-40"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

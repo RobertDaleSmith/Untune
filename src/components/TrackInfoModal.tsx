@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { Track } from "../lib/types";
 import { getArtworkDataUrl, retagTracks, getTrackById } from "../lib/commands";
@@ -8,6 +8,8 @@ import {
   formatFileSize,
 } from "../utils/formatters";
 import { TagSearchModal } from "./TagSearchModal";
+import { extractYouTubeVideoId } from "../utils/youtube";
+import { useLibraryStore } from "../stores/libraryStore";
 
 interface TrackInfoModalProps {
   track: Track;
@@ -48,6 +50,82 @@ function Section({
 function ratingStars(rating: number | null): string {
   if (!rating) return "";
   return "★".repeat(Math.round(rating / 20));
+}
+
+function VideoUrlField({ track, onUpdate }: { track: Track; onUpdate: (t: Track) => void }) {
+  const [value, setValue] = useState(track.sourceUrl ?? "");
+  const [saved, setSaved] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const updateTrackSourceUrl = useLibraryStore((s) => s.updateTrackSourceUrl);
+
+  useEffect(() => {
+    setValue(track.sourceUrl ?? "");
+    setSaved(false);
+  }, [track.id, track.sourceUrl]);
+
+  const isValid = value === "" || extractYouTubeVideoId(value) !== null;
+
+  const save = useCallback(() => {
+    const trimmed = value.trim();
+    if (trimmed && !extractYouTubeVideoId(trimmed)) return;
+    const newUrl = trimmed || null;
+    if (newUrl !== (track.sourceUrl ?? null)) {
+      updateTrackSourceUrl(track.id, newUrl);
+      onUpdate({ ...track, sourceUrl: newUrl });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  }, [value, track, updateTrackSourceUrl, onUpdate]);
+
+  const clear = useCallback(() => {
+    setValue("");
+    updateTrackSourceUrl(track.id, null);
+    onUpdate({ ...track, sourceUrl: null });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }, [track, updateTrackSourceUrl, onUpdate]);
+
+  return (
+    <div className="flex py-0.5 items-center">
+      <span className="text-n-500 text-xs w-[120px] shrink-0 text-right pr-3">
+        Video URL
+      </span>
+      <div className="flex-1 flex items-center gap-1.5 min-w-0">
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => { setValue(e.target.value); setSaved(false); }}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); save(); }
+            e.stopPropagation();
+          }}
+          placeholder="Paste YouTube URL..."
+          className={`flex-1 min-w-0 px-1.5 py-0.5 text-xs rounded bg-n-800 border text-n-200 placeholder:text-n-600 outline-none focus:border-accent ${
+            !isValid ? "border-red-500" : "border-n-700"
+          }`}
+        />
+        {saved && (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-400 shrink-0">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+        {track.sourceUrl && (
+          <button
+            onClick={clear}
+            className="text-n-500 hover:text-n-300 shrink-0"
+            title="Remove video link"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function TrackInfoModal({
@@ -327,16 +405,14 @@ export function TrackInfoModal({
             )}
           </Section>
 
+          <Section title="Video">
+            <VideoUrlField track={localTrack} onUpdate={setLocalTrack} />
+          </Section>
+
           <Section title="File">
             <InfoRow label="File Path" value={localTrack.filePath} />
             <InfoRow label="Persistent ID" value={localTrack.persistentId} />
             <InfoRow label="Artwork Hash" value={localTrack.artworkHash} />
-            {localTrack.sourceUrl && (
-              <InfoRow label="Source URL" value={
-                <a href={localTrack.sourceUrl} target="_blank" rel="noopener noreferrer"
-                   className="text-accent hover:underline">{localTrack.sourceUrl}</a>
-              } />
-            )}
           </Section>
         </div>
 

@@ -38,7 +38,8 @@ struct ArtistDetailView: View {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                         TrackRow(
                             track: track,
-                            isPlaying: audioPlayer.currentTrack?.id == track.id
+                            isPlaying: audioPlayer.currentTrack?.id == track.id,
+                            isPaused: audioPlayer.currentTrack?.id == track.id && !audioPlayer.isPlaying
                         )
                         .id(track.id)
                         .listRowBackground(Color.clear)

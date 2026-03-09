@@ -10,6 +10,7 @@ use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::tag::Accessor;
 
 /// Queue a URL for background download. Returns immediately.
+/// Detects playlist URLs and routes them to the playlist pipeline.
 #[tauri::command]
 pub async fn queue_url_download(
     app: AppHandle,
@@ -17,11 +18,17 @@ pub async fn queue_url_download(
 ) -> Result<(), String> {
     let app_clone = app.clone();
 
-    // Spawn the entire download pipeline as a background task
     tokio::spawn(async move {
-        if let Err(e) = process_url_download(app_clone.clone(), &url).await {
-            log::error!("URL download failed for {}: {}", url, e);
-            url_download::emit_url_progress(&app_clone, "error", &format!("Failed: {}", e));
+        if url_download::is_playlist_url(&url) {
+            if let Err(e) = process_playlist_download(app_clone.clone(), &url).await {
+                log::error!("Playlist download failed for {}: {}", url, e);
+                url_download::emit_url_progress(&app_clone, "error", &format!("Failed: {}", e));
+            }
+        } else {
+            if let Err(e) = process_url_download(app_clone.clone(), &url).await {
+                log::error!("URL download failed for {}: {}", url, e);
+                url_download::emit_url_progress(&app_clone, "error", &format!("Failed: {}", e));
+            }
         }
     });
 
@@ -110,6 +117,111 @@ async fn process_url_download(
         "complete",
         &format!("Added: {} - {}", track.artist.as_deref().unwrap_or(""), track.title),
     );
+    let _ = app.emit("library-changed", ());
+    Ok(())
+}
+
+/// Download all videos in a YouTube playlist, create a library playlist, and add tracks.
+async fn process_playlist_download(
+    app: AppHandle,
+    url: &str,
+) -> Result<(), String> {
+    let db: State<'_, Database> = app.state();
+
+    // Fetch playlist metadata (blocking yt-dlp call)
+    let app_clone = app.clone();
+    let url_owned = url.to_string();
+    let playlist_info = tokio::task::spawn_blocking(move || {
+        url_download::get_ytdlp_playlist_info(&url_owned, &app_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    let playlist_name = playlist_info.title.clone();
+    let total = playlist_info.entries.len();
+
+    url_download::emit_playlist_progress(
+        &app,
+        "downloading",
+        &format!("Playlist: {} ({} videos)", playlist_name, total),
+        0,
+        total,
+        &playlist_name,
+    );
+
+    // Create the playlist in the DB
+    let playlist_id = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        db::insert_regular_playlist(&conn, &playlist_name, None)
+            .map_err(|e| format!("Failed to create playlist: {}", e))?
+    };
+
+    let mut track_ids: Vec<i64> = Vec::new();
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+
+    for (i, entry) in playlist_info.entries.iter().enumerate() {
+        let label = entry
+            .title
+            .as_deref()
+            .unwrap_or(&entry.url);
+
+        url_download::emit_playlist_progress(
+            &app,
+            "downloading",
+            &format!("{} of {}: {}", i + 1, total, label),
+            i + 1,
+            total,
+            &playlist_name,
+        );
+
+        // Try to download and process this video
+        match process_url_download(app.clone(), &entry.url).await {
+            Ok(()) => {
+                succeeded += 1;
+            }
+            Err(e) => {
+                log::warn!("Playlist entry {} failed ({}): {}", i + 1, entry.url, e);
+                failed += 1;
+            }
+        }
+
+        // Look up the track ID by source_url (works for both new and already-existing)
+        let track_id = {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            conn.query_row(
+                "SELECT id FROM tracks WHERE source_url = ?1 ORDER BY id DESC LIMIT 1",
+                rusqlite::params![entry.url],
+                |row| row.get::<_, i64>(0),
+            )
+            .ok()
+        };
+
+        if let Some(id) = track_id {
+            track_ids.push(id);
+        }
+    }
+
+    // Add all collected tracks to the playlist
+    if !track_ids.is_empty() {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        db::add_tracks_to_playlist(&conn, playlist_id, &track_ids)
+            .map_err(|e| format!("Failed to add tracks to playlist: {}", e))?;
+    }
+
+    let summary = if failed > 0 {
+        format!(
+            "Playlist \"{}\": {} of {} tracks added ({} failed)",
+            playlist_name, succeeded, total, failed,
+        )
+    } else {
+        format!(
+            "Playlist \"{}\": {} tracks added",
+            playlist_name, succeeded,
+        )
+    };
+
+    url_download::emit_playlist_progress(&app, "complete", &summary, total, total, &playlist_name);
     let _ = app.emit("library-changed", ());
     Ok(())
 }

@@ -10,6 +10,7 @@ import {
   seekPlayback,
   setVolume as setVolumeCmd,
   playQueue,
+  playQueueAtPosition,
   toggleShuffle as toggleShuffleCmd,
   cycleRepeat as cycleRepeatCmd,
   setShuffleCmd,
@@ -29,8 +30,11 @@ import {
   getSleepTimerRemaining,
   getRadioState,
   playSimilar,
+  pushHandoffState,
+  pullHandoffState,
+  dismissHandoff as dismissHandoffCmd,
 } from "../lib/commands";
-import type { AudioRoute, AudioDevice } from "../lib/commands";
+import type { AudioRoute, AudioDevice, HandoffTrackInfo } from "../lib/commands";
 
 interface PlaybackState {
   currentTrackId: number | null;
@@ -53,8 +57,19 @@ interface PlaybackState {
   sleepTimerRemaining: number | null;
   crossfadeDuration: number;
   queuePanelOpen: boolean;
+  videoMode: boolean;
+  handoffInfo: HandoffTrackInfo | null;
+  handoffDismissed: boolean;
+  _handoffDebounce: ReturnType<typeof setTimeout> | null;
+  _handoffAutoHide: ReturnType<typeof setTimeout> | null;
 
+  setVideoMode: (on: boolean) => void;
+  toggleVideoMode: () => void;
   showError: (msg: string) => void;
+  debouncedPushHandoff: () => void;
+  checkHandoff: () => void;
+  acceptHandoff: () => Promise<void>;
+  dismissHandoff: () => void;
   toggleQueuePanel: () => void;
   requestScrollToNowPlaying: () => void;
   play: (trackIds: number[], startIndex: number, source?: string) => Promise<void>;
@@ -98,7 +113,80 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   audioDevices: [],
   sleepTimerRemaining: null,
   crossfadeDuration: 0,
+  videoMode: false,
   queuePanelOpen: false,
+  handoffInfo: null,
+  handoffDismissed: false,
+  _handoffDebounce: null,
+  _handoffAutoHide: null,
+
+  setVideoMode: (on) => set({ videoMode: on }),
+  toggleVideoMode: () => set((s) => ({ videoMode: !s.videoMode })),
+
+  checkHandoff: () => {
+    // Skip if banner is already showing or was recently dismissed
+    if (get().handoffInfo || get().handoffDismissed) return;
+    pullHandoffState()
+      .then((info) => {
+        if (info && info.trackId != null && info.deviceName) {
+          const thisDevice = info.localDeviceName;
+          if (thisDevice && info.deviceName === thisDevice) return;
+          const ageSeconds = Date.now() / 1000 - info.state.updatedAt;
+          if (ageSeconds < 86400) {
+            set({ handoffInfo: info, handoffDismissed: false });
+            const prev = get()._handoffAutoHide;
+            if (prev) clearTimeout(prev);
+            const timer = setTimeout(() => {
+              if (get().handoffInfo) {
+                set({ handoffInfo: null, handoffDismissed: true });
+              }
+            }, 15_000);
+            set({ _handoffAutoHide: timer });
+          }
+        }
+      })
+      .catch(() => {});
+  },
+
+  debouncedPushHandoff: () => {
+    const prev = get()._handoffDebounce;
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => {
+      pushHandoffState().catch(() => {});
+    }, 400);
+    set({ _handoffDebounce: timer });
+  },
+
+  acceptHandoff: async () => {
+    const info = get().handoffInfo;
+    if (!info || info.trackId == null) return;
+    set({ handoffInfo: null, handoffDismissed: true });
+
+    // Build queue and play, then seek to handoff position
+    const allTracks = useLibraryStore.getState().tracks;
+    const trackIds = allTracks.map((t) => t.id);
+    const idx = trackIds.indexOf(info.trackId);
+    if (idx >= 0) {
+      const source = info.state.queueSource ?? undefined;
+      const pos = info.state.position > 0 ? info.state.position : 0;
+      set({ queueSource: source ?? null, _restoredFromSession: false });
+      // Single command: load track, seek to position, then play — avoids race
+      await playQueueAtPosition(trackIds, idx, pos);
+      set({
+        currentTrackId: trackIds[idx],
+        isPlaying: true,
+        position: pos,
+      });
+      setPreference("session.trackId", String(trackIds[idx])).catch(() => {});
+      setPreference("session.position", String(pos)).catch(() => {});
+      get().startPolling();
+    }
+  },
+
+  dismissHandoff: () => {
+    set({ handoffInfo: null, handoffDismissed: true });
+    dismissHandoffCmd().catch(() => {});
+  },
 
   toggleQueuePanel: () => set((s) => ({ queuePanelOpen: !s.queuePanelOpen })),
 
@@ -122,6 +210,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       }
     }
     set({ queueSource: newSource, _restoredFromSession: false });
+    // User started playing — dismiss handoff banner
+    if (get().handoffInfo) {
+      set({ handoffInfo: null, handoffDismissed: true });
+    }
     try {
       await playQueue(trackIds, startIndex);
       set({
@@ -131,6 +223,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       });
       setPreference("session.trackId", String(trackIds[startIndex])).catch(() => {});
       setPreference("session.position", "0").catch(() => {});
+      if (newSource) setPreference("session.queueSource", newSource).catch(() => {});
       // Apply view settings after playback started (PlaybackInner now exists)
       if (viewSettings) {
         await setShuffleCmd(viewSettings.shuffle);
@@ -147,6 +240,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   pause: async () => {
     await pausePlayback();
     set({ isPlaying: false });
+    get().debouncedPushHandoff();
   },
 
   resume: async () => {
@@ -192,6 +286,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         setPreference("session.trackId", String(trackId)).catch(() => {});
         setPreference("session.position", "0").catch(() => {});
         get().startPolling();
+        get().debouncedPushHandoff();
       }
     } catch (e) {
       console.error("next_track failed:", e);
@@ -206,6 +301,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         setPreference("session.trackId", String(trackId)).catch(() => {});
         setPreference("session.position", "0").catch(() => {});
         get().startPolling();
+        get().debouncedPushHandoff();
       }
     } catch (e) {
       console.error("previous_track failed:", e);
@@ -407,6 +503,31 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     } catch {
       // Ignore corrupt preferences
     }
+
+    // Pull handoff state from remote (only show if from a different device)
+    pullHandoffState()
+      .then((info) => {
+        if (info && info.trackId != null && info.deviceName) {
+          // Ignore state pushed by this device
+          const thisDevice = info.localDeviceName;
+          if (thisDevice && info.deviceName === thisDevice) return;
+          // Show banner if remote state is less than 24 hours old
+          const ageSeconds = Date.now() / 1000 - info.state.updatedAt;
+          if (ageSeconds < 86400) {
+            set({ handoffInfo: info, handoffDismissed: false });
+            // Auto-dismiss after 15 seconds
+            const prev = get()._handoffAutoHide;
+            if (prev) clearTimeout(prev);
+            const timer = setTimeout(() => {
+              if (get().handoffInfo) {
+                set({ handoffInfo: null, handoffDismissed: true });
+              }
+            }, 15_000);
+            set({ _handoffAutoHide: timer });
+          }
+        }
+      })
+      .catch(() => {});
 
     // Load crossfade setting
     getPreference("crossfadeDuration")

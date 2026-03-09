@@ -149,7 +149,8 @@ export function Sidebar() {
     ? tracks.find((t) => t.id === currentTrackId)
     : null;
 
-  const [showVideo, setShowVideo] = useState(false);
+  const showVideo = usePlaybackStore((s) => s.videoMode);
+  const setShowVideo = usePlaybackStore((s) => s.setVideoMode);
   const videoId = currentTrack?.sourceUrl ? extractYouTubeVideoId(currentTrack.sourceUrl) : null;
 
   const isImporting = useLibraryStore((s) => s.isImporting);
@@ -776,7 +777,7 @@ export function Sidebar() {
         <div
           ref={artworkRef}
           onClick={showVideo ? undefined : openLightbox}
-          className={`aspect-square w-full overflow-hidden bg-n-800 relative${currentTrackId && !showVideo ? " cursor-pointer" : ""}`}
+          className={`group/art aspect-square w-full overflow-hidden bg-n-800 relative${currentTrackId ? " cursor-pointer" : ""}`}
         >
           {showVideo && videoId ? (
             <>
@@ -785,9 +786,14 @@ export function Sidebar() {
                 position={playbackPosition}
                 isPlaying={playbackIsPlaying}
               />
+              {/* Transparent overlay to capture clicks above the iframe */}
+              <div
+                className="absolute inset-0 z-10"
+                onDoubleClick={openLightbox}
+              />
               <button
                 onClick={(e) => { e.stopPropagation(); setShowVideo(false); }}
-                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors z-10"
+                className="absolute bottom-1.5 right-1.5 w-6 h-6 flex items-center justify-center rounded-full bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors z-20 opacity-0 group-hover/art:opacity-100"
                 title="Close video"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Track } from "../lib/types";
-import { setTrackRating as setTrackRatingCmd } from "../lib/commands";
+import { setTrackRating as setTrackRatingCmd, setTrackSourceUrl as setTrackSourceUrlCmd } from "../lib/commands";
 
 interface LibraryState {
   tracks: Track[];
@@ -32,6 +32,7 @@ interface LibraryState {
   setSelectedTrackIds: (ids: number[]) => void;
   setDraggedTrackIds: (ids: number[]) => void;
   updateTrackRating: (trackId: number, rating: number | null) => void;
+  updateTrackSourceUrl: (trackId: number, sourceUrl: string | null) => void;
   recordTrackPlayed: (trackId: number) => void;
 }
 
@@ -73,6 +74,15 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       searchResults: state.searchResults?.map(updateTrack) ?? null,
     }));
     setTrackRatingCmd(trackId, dbRating);
+  },
+  updateTrackSourceUrl: (trackId, sourceUrl) => {
+    const updateTrack = (t: Track) =>
+      t.id === trackId ? { ...t, sourceUrl } : t;
+    set((state) => ({
+      tracks: state.tracks.map(updateTrack),
+      searchResults: state.searchResults?.map(updateTrack) ?? null,
+    }));
+    setTrackSourceUrlCmd(trackId, sourceUrl);
   },
   recordTrackPlayed: (trackId) => {
     const now = new Date().toISOString();

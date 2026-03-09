@@ -8,6 +8,12 @@ use tauri::{AppHandle, Emitter, Manager};
 pub struct UrlDownloadProgress {
     pub phase: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playlist_name: Option<String>,
 }
 
 #[derive(Debug)]
@@ -54,6 +60,29 @@ pub fn emit_url_progress(app: &AppHandle, phase: &str, message: &str) {
         UrlDownloadProgress {
             phase: phase.to_string(),
             message: message.to_string(),
+            current: None,
+            total: None,
+            playlist_name: None,
+        },
+    );
+}
+
+pub fn emit_playlist_progress(
+    app: &AppHandle,
+    phase: &str,
+    message: &str,
+    current: usize,
+    total: usize,
+    playlist_name: &str,
+) {
+    let _ = app.emit(
+        "url-download-progress",
+        UrlDownloadProgress {
+            phase: phase.to_string(),
+            message: message.to_string(),
+            current: Some(current),
+            total: Some(total),
+            playlist_name: Some(playlist_name.to_string()),
         },
     );
 }
@@ -131,6 +160,90 @@ pub fn download_audio(
         file_path,
         thumbnail_path,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Playlist helpers
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct YtDlpPlaylistEntry {
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub id: Option<String>,
+    pub playlist_title: Option<String>,
+}
+
+pub struct PlaylistInfo {
+    pub title: String,
+    pub entries: Vec<PlaylistEntry>,
+}
+
+pub struct PlaylistEntry {
+    pub url: String,
+    pub title: Option<String>,
+}
+
+/// Returns true if the URL looks like a YouTube playlist URL (contains `list=`).
+pub fn is_playlist_url(url: &str) -> bool {
+    url.contains("list=")
+}
+
+/// Enumerate all videos in a playlist using yt-dlp --flat-playlist.
+/// Returns the playlist title and a list of individual video URLs.
+pub fn get_ytdlp_playlist_info(url: &str, app: &AppHandle) -> Result<PlaylistInfo, String> {
+    let ytdlp = find_ytdlp(app)?;
+
+    emit_url_progress(app, "metadata", "Fetching playlist info...");
+
+    let output = Command::new(&ytdlp)
+        .args(["--dump-json", "--flat-playlist", "--no-download", url])
+        .output()
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp playlist fetch failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut playlist_title: Option<String> = None;
+    let mut entries = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let entry: YtDlpPlaylistEntry = serde_json::from_str(line)
+            .map_err(|e| format!("Failed to parse playlist entry JSON: {}", e))?;
+
+        // Grab playlist title from first entry
+        if playlist_title.is_none() {
+            playlist_title = entry.playlist_title.clone();
+        }
+
+        // Build the video URL from the entry
+        let video_url = entry
+            .url
+            .clone()
+            .or_else(|| entry.id.as_ref().map(|id| format!("https://www.youtube.com/watch?v={}", id)));
+
+        if let Some(video_url) = video_url {
+            entries.push(PlaylistEntry {
+                url: video_url,
+                title: entry.title.clone(),
+            });
+        }
+    }
+
+    if entries.is_empty() {
+        return Err("No videos found in playlist".to_string());
+    }
+
+    let title = playlist_title.unwrap_or_else(|| "YouTube Playlist".to_string());
+
+    Ok(PlaylistInfo { title, entries })
 }
 
 /// Fetch metadata from a URL without downloading using yt-dlp --dump-json.

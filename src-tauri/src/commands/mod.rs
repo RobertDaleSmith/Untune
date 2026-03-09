@@ -2,6 +2,7 @@ pub mod ai_tags;
 pub mod airplay;
 pub mod assistant;
 pub mod bios;
+pub mod handoff;
 pub mod import;
 pub mod tracks;
 pub mod playlists;

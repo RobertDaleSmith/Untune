@@ -8,6 +8,7 @@ struct UntuneApp: App {
     @State private var pairingManager = PairingManager()
     @State private var discovery = DesktopDiscovery()
     @State private var syncEngine: SyncEngine
+    @State private var handoffManager = HandoffManager.shared
 
     init() {
         let pairing = PairingManager()
@@ -23,9 +24,11 @@ struct UntuneApp: App {
                 .environment(pairingManager)
                 .environment(discovery)
                 .environment(syncEngine)
+                .environment(handoffManager)
                 .onAppear {
                     databaseManager.seedMockDataIfEmpty()
                     audioPlayer.restoreLastSession()
+                    Task { await handoffManager.pull() }
 
                     // Connect streaming URLs to pairing info
                     if pairingManager.isPaired {

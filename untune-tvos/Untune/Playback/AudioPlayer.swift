@@ -107,6 +107,7 @@ class AudioPlayer {
         defaults.set(queue.map(\.id), forKey: StorageKey.queueTrackIds)
         defaults.set(queueIndex, forKey: StorageKey.queueIndex)
         defaults.set(position, forKey: StorageKey.position)
+        Task { await HandoffManager.shared.push(player: self) }
     }
 
     var upNext: [Track] {

@@ -1,0 +1,11 @@
+{
+  "name": "untune-sync",
+  "private": true,
+  "dependencies": {
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^5.1.0",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -319,6 +319,26 @@ class DatabaseManager {
         }
     }
 
+    // MARK: - Handoff Lookups
+
+    func fetchTrackByPersistentId(_ persistentId: String) throws -> Track? {
+        try dbPool.read { db in
+            try TrackRecord
+                .filter(Column("persistentId") == persistentId)
+                .fetchOne(db)?
+                .toTrack()
+        }
+    }
+
+    func fetchPlaylistByPersistentId(_ persistentId: String) throws -> Playlist? {
+        try dbPool.read { db in
+            try PlaylistRecord
+                .filter(Column("persistentId") == persistentId)
+                .fetchOne(db)?
+                .toPlaylist()
+        }
+    }
+
     // MARK: - Mock Data
 
     func seedMockDataIfEmpty() {

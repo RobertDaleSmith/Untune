@@ -273,6 +273,23 @@ impl PlaybackState {
         Ok(())
     }
 
+    pub fn play_at(&self, path: &str, track_id: i64, duration: Option<f64>, position_secs: f64) -> Result<(), String> {
+        self.play(path, track_id, duration)?;
+        if position_secs > 0.0 {
+            let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+            if let Some(inner) = guard.as_mut() {
+                let dur = std::time::Duration::from_secs_f64(position_secs);
+                inner
+                    .sink
+                    .try_seek(dur)
+                    .map_err(|e| format!("Seek error: {}", e))?;
+                inner.accumulated_position = position_secs;
+                inner.play_started_at = Some(Instant::now());
+            }
+        }
+        Ok(())
+    }
+
     pub fn pause(&self) -> Result<(), String> {
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
         if let Some(inner) = guard.as_mut() {

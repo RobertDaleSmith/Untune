@@ -30,9 +30,9 @@
         #initial-loader .spinner{border-color:#404040;border-top-color:#a3a3a3}
       }
     </style>
-    <div id="initial-loader">
+    <div id="initial-loader" data-tauri-drag-region>
       <div id="starfield" style="position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden"></div>
-      <div class="content">
+      <div class="content" data-tauri-drag-region>
         <img class="icon-light" src="/icon-light.png" alt="" width="200" height="200" />
         <img class="icon-dark" src="/icon-dark.png" alt="" width="200" height="200" />
         <div class="spinner" style="margin-top:32px"></div>

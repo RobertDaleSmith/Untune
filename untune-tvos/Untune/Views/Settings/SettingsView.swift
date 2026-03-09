@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(PairingManager.self) private var pairingManager
     @Environment(SyncEngine.self) private var syncEngine
+    @Environment(HandoffManager.self) private var handoffManager
 
     var body: some View {
         NavigationStack {
@@ -52,6 +53,25 @@ struct SettingsView: View {
                         NavigationLink("Connect to Desktop") {
                             PairingView()
                         }
+                    }
+                }
+
+                // Handoff
+                Section("Handoff") {
+                    @Bindable var hm = handoffManager
+                    LabeledContent("Status") {
+                        Text(handoffManager.isConfigured ? "Configured" : "Not configured")
+                            .foregroundStyle(handoffManager.isConfigured ? .green : .secondary)
+                    }
+                    LabeledContent("Server URL") {
+                        TextField("https://your-project.vercel.app", text: $hm.url)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                    LabeledContent("Token") {
+                        TextField("Paste token from desktop", text: $hm.token)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
                     }
                 }
 

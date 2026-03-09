@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(PairingManager.self) private var pairingManager
     @Environment(DesktopDiscovery.self) private var discovery
     @Environment(SyncEngine.self) private var syncEngine
+    @Environment(HandoffManager.self) private var handoffManager
 
     @State private var trackCount = 0
     @State private var downloadedCount = 0
@@ -23,6 +24,7 @@ struct SettingsView: View {
             List {
                 appearanceSection
                 syncSection
+                handoffSection
                 librarySection
                 storageSection
                 aboutSection
@@ -222,6 +224,42 @@ struct SettingsView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+        }
+    }
+
+    // MARK: - Handoff Section
+
+    @ViewBuilder
+    private var handoffSection: some View {
+        @Bindable var hm = handoffManager
+        Section("Handoff") {
+            LabeledContent("Status") {
+                Text(handoffManager.isConfigured ? "Configured" : "Not configured")
+                    .foregroundStyle(handoffManager.isConfigured ? .green : .secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Server URL")
+                    .font(.subheadline)
+                TextField("https://your-project.vercel.app", text: $hm.url)
+                    .textContentType(.URL)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .font(.caption.monospaced())
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Token")
+                    .font(.subheadline)
+                TextField("Paste token from desktop", text: $hm.token)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .font(.caption.monospaced())
+            }
+
+            Text("Use the same URL and token on all devices to enable cross-device resume.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
     }
 

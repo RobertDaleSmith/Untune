@@ -149,15 +149,22 @@ export const useActivityStore = create<ActivityState>((set) => ({
         },
       );
 
-      const u5 = await listen<{ phase: string; message: string }>(
+      const u5 = await listen<{
+        phase: string;
+        message: string;
+        current?: number;
+        total?: number;
+        playlistName?: string;
+      }>(
         "url-download-progress",
         (e) => {
-          const { phase, message } = e.payload;
+          const { phase, message, current, total, playlistName } = e.payload;
+          const label = playlistName ? `Playlist: ${playlistName}` : "URL Download";
           if (phase === "complete" || phase === "error") {
-            upsert("url-download", "URL Download", 1, 1, message);
+            upsert("url-download", label, current ?? 1, total ?? 1, message);
             markComplete("url-download");
           } else {
-            upsert("url-download", "URL Download", 0, 1, message);
+            upsert("url-download", label, current ?? 0, total ?? 1, message);
           }
         },
       );

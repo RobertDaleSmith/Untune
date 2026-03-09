@@ -75,6 +75,33 @@ pub fn play_queue(
 }
 
 #[tauri::command]
+pub fn play_queue_at_position(
+    track_ids: Vec<i64>,
+    start_index: usize,
+    position_secs: f64,
+    db: State<'_, Database>,
+    playback: State<'_, PlaybackState>,
+) -> Result<(), String> {
+    if track_ids.is_empty() {
+        return Err("Empty queue".to_string());
+    }
+    let idx = start_index.min(track_ids.len() - 1);
+    let track_id = track_ids[idx];
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let info = db::get_track_file_info(&conn, track_id)
+        .map_err(|e| format!("Track not found: {}", e))?;
+    drop(conn);
+    match info {
+        Some((path, duration)) => {
+            playback.play_at(&path, track_id, duration, position_secs)?;
+        }
+        None => return Err(format!("Track {} has no file path", track_id)),
+    }
+    playback.set_queue(track_ids, idx)
+}
+
+#[tauri::command]
 pub fn pause_playback(playback: State<'_, PlaybackState>) -> Result<(), String> {
     playback.pause()
 }

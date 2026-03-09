@@ -38,9 +38,9 @@ function ensureYTApi(): Promise<void> {
   });
 }
 
-/** Max allowed drift in seconds before re-syncing */
-const DRIFT_THRESHOLD = 2;
-/** How often to check drift (ms) */
+/** Only hard-seek when drift is really egregious (e.g. user seek / track change) */
+const SEEK_THRESHOLD = 5;
+/** How often to check play/pause state (ms) — no position correction */
 const SYNC_INTERVAL = 3000;
 
 export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTubePlayerProps) {
@@ -66,16 +66,18 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
     } catch { /* player not ready */ }
   }, []);
 
-  const syncPosition = useCallback(() => {
+  // Periodic check — only sync play/pause state and correct truly massive drift
+  const syncState = useCallback(() => {
     const player = playerRef.current;
     if (!player?.getCurrentTime || !readyRef.current) return;
     try {
+      // Only hard-seek if way off (5s+)
       const ytTime = player.getCurrentTime();
       const drift = Math.abs(ytTime - positionRef.current);
-      if (drift > DRIFT_THRESHOLD) {
+      if (drift > SEEK_THRESHOLD) {
         player.seekTo(positionRef.current, true);
       }
-      // Sync play/pause state
+      // Keep play/pause in sync
       if (isPlayingRef.current) {
         tryPlay(player);
       } else {
@@ -174,18 +176,18 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
     };
   }, []);
 
-  // Periodic sync
+  // Periodic play/pause sync + safety-net drift check
   useEffect(() => {
-    const timer = setInterval(syncPosition, SYNC_INTERVAL);
+    const timer = setInterval(syncState, SYNC_INTERVAL);
     return () => clearInterval(timer);
-  }, [syncPosition]);
+  }, [syncState]);
 
-  // Detect seeks (large position jumps) and sync immediately
+  // Detect user seeks (large position jumps) and sync
   const prevPositionRef = useRef(position);
   useEffect(() => {
     const delta = Math.abs(position - prevPositionRef.current);
     prevPositionRef.current = position;
-    if (delta > DRIFT_THRESHOLD) {
+    if (delta > SEEK_THRESHOLD) {
       const player = playerRef.current;
       if (player?.seekTo) {
         try { player.seekTo(position, true); } catch { /* ignore */ }

@@ -52,6 +52,7 @@
 		ECD95DB2AE3BE8F2C4D295B0 /* DesktopDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C6529C39169A90EFD72126 /* DesktopDiscovery.swift */; };
 		ED832314054CD4C7F2B699AB /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2152D162C2DE55646A3C625 /* Intents.framework */; };
 		EEC43CFBA197F833BF6EEA8B /* TransparentBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE1D4B92F9AD8578B54B686 /* TransparentBackground.swift */; };
+		EEE0AB7317679885A6224874 /* HandoffManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CAC7F82B32900A6664CD84 /* HandoffManager.swift */; };
 		EFA01B670181DC20593CA619 /* icon-light@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 6D4E37F5A0F544163998C9F4 /* icon-light@2x.png */; };
 		FA006D420C8B188468DC10F0 /* CarPlay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C8C8D6F56A00EC3D4882488 /* CarPlay.framework */; };
 		FD1DE66FD9F009EC2356F1D2 /* PlayMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7752C54F4237A85FDDA187C7 /* PlayMediaIntentHandler.swift */; };
@@ -69,6 +70,7 @@
 		391475468033D8F7B288F980 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		398B8743EE415A10027FECB8 /* AppIconShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconShape.swift; sourceTree = "<group>"; };
 		3A86BEFF5BD9B4B963820812 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		44CAC7F82B32900A6664CD84 /* HandoffManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffManager.swift; sourceTree = "<group>"; };
 		4ECA30F62469BB3DC220C6C6 /* ArtistsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistsView.swift; sourceTree = "<group>"; };
 		545EE05A799F9A6E5D439B65 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		55014997E0154A23DC036DDE /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Track.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				57C6529C39169A90EFD72126 /* DesktopDiscovery.swift */,
+				44CAC7F82B32900A6664CD84 /* HandoffManager.swift */,
 				911D885A8A0F94715F8575B1 /* PairingManager.swift */,
 				59FED6ACE91235B897909FEC /* SyncClient.swift */,
 			);
@@ -427,6 +430,7 @@
 				B72F003CC5DDC52D78C08308 /* ContentView.swift in Sources */,
 				5263FBF06DD66B11B7F39AE4 /* DatabaseManager.swift in Sources */,
 				ECD95DB2AE3BE8F2C4D295B0 /* DesktopDiscovery.swift in Sources */,
+				EEE0AB7317679885A6224874 /* HandoffManager.swift in Sources */,
 				3D7B63082764B0144320ABB9 /* LibraryView.swift in Sources */,
 				74B02347B0CD8188874051D1 /* MarqueeText.swift in Sources */,
 				07B97B605CD8AF7471D25AB4 /* MiniPlayerBar.swift in Sources */,

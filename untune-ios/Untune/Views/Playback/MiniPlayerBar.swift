@@ -4,6 +4,8 @@ struct MiniPlayerBar: View {
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(\.colorScheme) private var colorScheme
     @Binding var showNowPlaying: Bool
+    @State private var isScrubbing = false
+    @State private var scrubProgress: Double = 0
 
     private func playRandom() {
         guard var tracks = try? DatabaseManager.shared.fetchAllTracks(), !tracks.isEmpty else { return }
@@ -14,13 +16,33 @@ struct MiniPlayerBar: View {
     var body: some View {
         VStack(spacing: 0) {
             if let track = audioPlayer.currentTrack {
-                // Progress bar
+                // Progress bar (scrubbable)
                 GeometryReader { geo in
-                    Rectangle()
-                        .fill(audioPlayer.accentColor ?? (colorScheme == .dark ? .white : .black))
-                        .frame(width: geo.size.width * audioPlayer.progress, height: 2)
+                    let displayProgress = isScrubbing ? scrubProgress : audioPlayer.progress
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                            .fill(.quaternary)
+                        Rectangle()
+                            .fill(audioPlayer.accentColor ?? (colorScheme == .dark ? .white : .black))
+                            .frame(width: geo.size.width * min(max(displayProgress, 0), 1))
+                    }
+                    .frame(height: isScrubbing ? 6 : 2)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                isScrubbing = true
+                                scrubProgress = min(max(value.location.x / geo.size.width, 0), 1)
+                            }
+                            .onEnded { value in
+                                let fraction = min(max(value.location.x / geo.size.width, 0), 1)
+                                audioPlayer.seekToFraction(fraction)
+                                isScrubbing = false
+                            }
+                    )
                 }
-                .frame(height: 2)
+                .frame(height: 12)
 
                 HStack(spacing: 12) {
                     ArtworkView(track.artworkHash, size: 40)

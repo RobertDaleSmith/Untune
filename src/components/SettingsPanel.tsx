@@ -21,6 +21,9 @@ import {
   unpairDevice,
   setSyncPlaylists,
   getPlaylists,
+  getHandoffConfig,
+  configureHandoff,
+  generateHandoffToken,
 } from "../lib/commands";
 import type { SyncStatus, Playlist } from "../lib/types";
 
@@ -53,12 +56,25 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [allPlaylists, setAllPlaylists] = useState<Playlist[]>([]);
   const [syncLoading, setSyncLoading] = useState(false);
 
+  // Handoff state
+  const [handoffUrl, setHandoffUrl] = useState("");
+  const [handoffToken, setHandoffToken] = useState("");
+  const [handoffConfigured, setHandoffConfigured] = useState(false);
+  const [handoffCopied, setHandoffCopied] = useState(false);
+
   useEffect(() => {
     getPreference("ai_auto_tag").then((v) => setAiAutoTag(v === "true"));
     getPreference("assistant_tts_enabled").then((v) => setAssistantTts(v === "true"));
     hasAssistantApiKey().then(setHasApiKey);
     getSyncStatus().then(setSyncStatus).catch(() => {});
     getPlaylists().then(setAllPlaylists).catch(() => {});
+    getHandoffConfig().then((cfg) => {
+      if (cfg) {
+        setHandoffUrl(cfg.url);
+        setHandoffToken(cfg.token);
+        setHandoffConfigured(true);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleAutoTagToggle = useCallback((v: boolean) => {
@@ -474,6 +490,75 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 )}
               </>
             )}
+          </div>
+        </div>
+
+        {/* Handoff */}
+        <div className="px-6 py-4 border-b border-n-800">
+          <h3 className="text-[11px] font-medium text-n-500 uppercase tracking-wider mb-3">Handoff</h3>
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[13px] text-n-200">Server URL</span>
+                {handoffConfigured && (
+                  <span className="text-[10px] text-green-400">Configured</span>
+                )}
+              </div>
+              <input
+                type="text"
+                value={handoffUrl}
+                onChange={(e) => setHandoffUrl(e.target.value)}
+                onBlur={() => {
+                  if (handoffUrl && handoffToken) {
+                    configureHandoff(handoffUrl, handoffToken).then(() => setHandoffConfigured(true)).catch(() => {});
+                  }
+                }}
+                placeholder="https://your-project.vercel.app"
+                className="w-full bg-n-800 border border-n-700 rounded-lg px-3 py-1.5 text-[12px] text-n-200 placeholder-n-600 outline-none focus:border-n-500 transition-colors font-mono"
+              />
+            </div>
+
+            <div>
+              <span className="text-[13px] text-n-200">Token</span>
+              <div className="flex gap-1.5 mt-1">
+                <input
+                  type="text"
+                  value={handoffToken}
+                  readOnly
+                  className="flex-1 bg-n-800 border border-n-700 rounded-lg px-3 py-1.5 text-[11px] text-n-400 font-mono outline-none truncate"
+                  placeholder="Click Generate to create a token"
+                />
+                <button
+                  onClick={() => {
+                    if (handoffToken) {
+                      navigator.clipboard.writeText(handoffToken);
+                      setHandoffCopied(true);
+                      setTimeout(() => setHandoffCopied(false), 2000);
+                    }
+                  }}
+                  className="px-2.5 py-1 text-[11px] rounded-md bg-n-800 text-n-300 hover:text-n-100 hover:bg-n-700 transition-colors"
+                  title="Copy token"
+                >
+                  {handoffCopied ? "Copied" : "Copy"}
+                </button>
+                <button
+                  onClick={async () => {
+                    const token = await generateHandoffToken();
+                    setHandoffToken(token);
+                    if (handoffUrl) {
+                      await configureHandoff(handoffUrl, token);
+                      setHandoffConfigured(true);
+                    }
+                  }}
+                  className="px-2.5 py-1 text-[11px] rounded-md bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+                >
+                  Generate
+                </button>
+              </div>
+              <p className="text-[10px] text-n-600 mt-1">
+                Use the same URL and token on all devices to enable cross-device resume
+              </p>
+            </div>
           </div>
         </div>
 

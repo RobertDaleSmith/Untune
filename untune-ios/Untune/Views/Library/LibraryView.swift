@@ -13,6 +13,9 @@ struct LibraryView: View {
     @State private var showSettings = false
     @State private var scrollTracker = ScrollTracker()
     @State private var navigationPath = NavigationPath()
+    @State private var showSearch = false
+    @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
     @Binding var pendingArtist: String?
     @Binding var pendingAlbum: String?
 
@@ -28,6 +31,19 @@ struct LibraryView: View {
                         shuffleAll()
                     } label: {
                         Image(systemName: "dice.fill")
+                            .font(.title3)
+                    }
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showSearch.toggle()
+                        }
+                        if showSearch {
+                            searchFocused = true
+                        } else {
+                            searchText = ""
+                        }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
                             .font(.title3)
                     }
                     Button {
@@ -50,20 +66,48 @@ struct LibraryView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
 
+                if showSearch {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField(searchPlaceholder, text: $searchText)
+                            .textFieldStyle(.plain)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .focused($searchFocused)
+                        if !searchText.isEmpty {
+                            Button {
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 switch selectedTab {
                 case 0:
                     playlistsList
                 case 1:
                     allSongsList
                 case 2:
-                    AlbumsView(tracks: allTracks)
+                    AlbumsView(tracks: filteredTracks)
                 case 3:
-                    ArtistsView(tracks: allTracks)
+                    ArtistsView(tracks: filteredTracks)
                 default:
                     EmptyView()
                 }
             }
             .background(TransparentBackground())
+            .onChange(of: selectedTab) { _, _ in
+                searchFocused = false
+            }
             .toolbar(.hidden, for: .navigationBar)
             .onAppear(perform: loadData)
             .onChange(of: syncEngine.state) { oldState, newState in
@@ -103,7 +147,7 @@ struct LibraryView: View {
 
     private var playlistsList: some View {
         List {
-            ForEach(playlists) { playlist in
+            ForEach(filteredPlaylists) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
                     HStack {
                         Image(systemName: "music.note.list")
@@ -125,20 +169,23 @@ struct LibraryView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.immediately)
     }
 
     private var allSongsList: some View {
-        ScrollViewReader { proxy in
+        let tracks = filteredTracks
+        return ScrollViewReader { proxy in
             List {
-                ForEach(Array(allTracks.enumerated()), id: \.element.id) { index, track in
+                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                     TrackRow(
                         track: track,
-                        isPlaying: audioPlayer.currentTrack?.id == track.id
+                        isPlaying: audioPlayer.currentTrack?.id == track.id,
+                        isPaused: audioPlayer.currentTrack?.id == track.id && !audioPlayer.isPlaying
                     )
                     .id(track.id)
                     .listRowBackground(Color.clear)
                     .onTapGesture {
-                        audioPlayer.play(tracks: allTracks, startIndex: index)
+                        audioPlayer.play(tracks: tracks, startIndex: index)
                     }
                 }
             }
@@ -161,6 +208,38 @@ struct LibraryView: View {
                 }
             }
         }
+    }
+
+    private var searchPlaceholder: String {
+        switch selectedTab {
+        case 0: return "Search playlists"
+        case 1: return "Search songs"
+        case 2: return "Search albums"
+        case 3: return "Search artists"
+        default: return "Search"
+        }
+    }
+
+    private var searchQuery: String {
+        guard showSearch else { return "" }
+        return searchText.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    private var filteredTracks: [Track] {
+        let q = searchQuery
+        guard !q.isEmpty else { return allTracks }
+        return allTracks.filter { track in
+            track.title.localizedCaseInsensitiveContains(q)
+            || (track.artist ?? "").localizedCaseInsensitiveContains(q)
+            || (track.albumArtist ?? "").localizedCaseInsensitiveContains(q)
+            || (track.album ?? "").localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private var filteredPlaylists: [Playlist] {
+        let q = searchQuery
+        guard !q.isEmpty else { return playlists }
+        return playlists.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
     private func shuffleAll() {

@@ -11,6 +11,7 @@ export function AddFromUrlDialog({ open, onClose, initialUrl }: Props) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isPlaylist = url.includes("list=");
 
   // Focus input when dialog opens
   useEffect(() => {
@@ -97,6 +98,12 @@ export function AddFromUrlDialog({ open, onClose, initialUrl }: Props) {
           placeholder="https://youtube.com/watch?v=..."
           className="w-full bg-n-800 border border-n-700 rounded-lg px-3 py-2 text-[13px] text-n-200 placeholder-n-600 outline-none focus:border-n-500 transition-colors font-mono"
         />
+
+        {isPlaylist && (
+          <p className="text-accent/80 text-[11px] mt-2">
+            Playlist detected — all videos will be downloaded and added to a new playlist
+          </p>
+        )}
 
         {error && (
           <p className="text-red-400 text-[11px] mt-2">{error}</p>

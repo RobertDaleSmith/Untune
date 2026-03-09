@@ -22,6 +22,7 @@ import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
 import { QueuePanel } from "./components/QueuePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AddFromUrlDialog } from "./components/AddFromUrlDialog";
+import { HandoffBanner } from "./components/HandoffBanner";
 import { extractAccentColor, adjustForTheme } from "./lib/extractAccentColor";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 
@@ -119,6 +120,27 @@ function App() {
     usePlaybackStore.getState().init();
     useAssistantStore.getState().init();
     useActivityStore.getState().init();
+  }, []);
+
+  // Check for handoff state when window regains focus
+  useEffect(() => {
+    const check = () => {
+      const store = usePlaybackStore.getState();
+      if (store.handoffDismissed) {
+        usePlaybackStore.setState({ handoffDismissed: false });
+      }
+      store.checkHandoff();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    const onFocus = () => check();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   // Listen for deep-link URLs (untune://add?url=...)
@@ -731,6 +753,7 @@ function App() {
         </div>
       </div>
 
+      <HandoffBanner />
       <QueuePanel />
       <AssistantPanel />
       <AssistantApiKeyModal />

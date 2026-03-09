@@ -59,6 +59,10 @@ export async function playQueue(trackIds: number[], startIndex: number): Promise
   return invoke("play_queue", { trackIds, startIndex });
 }
 
+export async function playQueueAtPosition(trackIds: number[], startIndex: number, positionSecs: number): Promise<void> {
+  return invoke("play_queue_at_position", { trackIds, startIndex, positionSecs });
+}
+
 export async function pausePlayback(): Promise<void> {
   return invoke("pause_playback");
 }
@@ -133,6 +137,10 @@ export async function revealInFinder(path: string): Promise<void> {
 
 export async function setTrackRating(trackId: number, rating: number | null): Promise<void> {
   return invoke("set_track_rating", { trackId, rating });
+}
+
+export async function setTrackSourceUrl(trackId: number, sourceUrl: string | null): Promise<void> {
+  return invoke("set_track_source_url", { trackId, sourceUrl });
 }
 
 export async function getSmartViewTracks(viewName: string): Promise<Track[]> {
@@ -583,4 +591,55 @@ export async function unpairDevice(deviceId: string): Promise<void> {
 
 export async function setSyncPlaylists(deviceId: string, playlistIds: number[]): Promise<void> {
   return invoke("set_sync_playlists", { deviceId, playlistIds });
+}
+
+// --- Handoff ---
+
+export interface HandoffState {
+  trackPersistentId: string;
+  position: number;
+  queueSource: string | null;
+  shuffle: boolean;
+  repeatMode: string;
+  updatedAt: number;
+  deviceName: string;
+}
+
+export interface HandoffConfig {
+  url: string;
+  token: string;
+}
+
+export interface HandoffTrackInfo {
+  state: HandoffState;
+  trackId: number | null;
+  title: string | null;
+  artist: string | null;
+  artworkHash: string | null;
+  deviceName: string | null;
+  localDeviceName: string | null;
+}
+
+export async function generateHandoffToken(): Promise<string> {
+  return invoke<string>("generate_handoff_token");
+}
+
+export async function configureHandoff(url: string, token: string): Promise<void> {
+  return invoke("configure_handoff", { url, token });
+}
+
+export async function getHandoffConfig(): Promise<HandoffConfig | null> {
+  return invoke<HandoffConfig | null>("get_handoff_config");
+}
+
+export async function pushHandoffState(): Promise<void> {
+  return invoke("push_handoff_state");
+}
+
+export async function pullHandoffState(): Promise<HandoffTrackInfo | null> {
+  return invoke<HandoffTrackInfo | null>("pull_handoff_state");
+}
+
+export async function dismissHandoff(): Promise<void> {
+  return invoke("dismiss_handoff");
 }

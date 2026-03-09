@@ -61,7 +61,7 @@ export function ArtworkLightbox({
     () => localStorage.getItem("lightbox-lyrics") !== "false",
   );
   const [artColor, setArtColor] = useState<[number, number, number]>([255, 255, 255]);
-  const [videoVisible, setVideoVisible] = useState(false);
+  const videoVisible = usePlaybackStore((s) => s.videoMode);
   const videoId = sourceUrl ? extractYouTubeVideoId(sourceUrl) : null;
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -226,7 +226,7 @@ export function ArtworkLightbox({
         setLyricsVisible((prev) => !prev);
       }
       if ((e.key === "y" || e.key === "Y") && videoId) {
-        setVideoVisible((prev) => !prev);
+        usePlaybackStore.getState().toggleVideoMode();
       }
     };
     document.addEventListener("keydown", handler);
@@ -389,7 +389,7 @@ export function ArtworkLightbox({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            setVideoVisible((prev) => !prev);
+            usePlaybackStore.getState().toggleVideoMode();
           }}
           className={`p-2 rounded-full transition-colors ${
             videoVisible

@@ -10,7 +10,7 @@ struct QueueView: View {
                 // Now Playing
                 if let track = audioPlayer.currentTrack {
                     Section("Now Playing") {
-                        TrackRow(track: track, isPlaying: true)
+                        TrackRow(track: track, isPlaying: true, isPaused: !audioPlayer.isPlaying)
                     }
                 }
 
