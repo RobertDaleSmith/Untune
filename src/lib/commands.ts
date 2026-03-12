@@ -16,6 +16,16 @@ export async function importLibrary(): Promise<ImportStats> {
   return invoke<ImportStats>("import_library");
 }
 
+export interface ImportFilesResult {
+  imported: number;
+  skipped: number;
+  failed: number;
+}
+
+export async function importFiles(paths: string[]): Promise<ImportFilesResult> {
+  return invoke<ImportFilesResult>("import_files", { paths });
+}
+
 export async function resetLibrary(): Promise<void> {
   return invoke("reset_library");
 }
@@ -535,6 +545,18 @@ export async function isSpeaking(): Promise<boolean> {
 
 export async function queueUrlDownload(url: string): Promise<void> {
   return invoke<void>("queue_url_download", { url });
+}
+
+export interface DependencyStatus {
+  name: string;
+  installed: boolean;
+  version: string | null;
+  path: string | null;
+  installHint: string;
+}
+
+export async function checkDependencies(): Promise<DependencyStatus[]> {
+  return invoke<DependencyStatus[]>("check_dependencies");
 }
 
 export interface FindTagsResult {

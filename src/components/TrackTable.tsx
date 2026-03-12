@@ -318,11 +318,18 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     };
   }, [contextMenu]);
 
+  // Start with minimal overscan for fast initial paint, then increase for smooth scrolling
+  const [overscan, setOverscan] = useState(20);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOverscan(200));
+    return () => cancelAnimationFrame(frame);
+  }, [rows]);
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: useCallback(() => ROW_HEIGHT, []),
-    overscan: 100,
+    overscan,
     scrollPaddingStart: ROW_HEIGHT,
     scrollPaddingEnd: ROW_HEIGHT,
   });
@@ -509,11 +516,27 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const virtualRows = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
 
-  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
-  const paddingBottom =
-    virtualRows.length > 0
-      ? totalSize - virtualRows[virtualRows.length - 1].end
-      : 0;
+  // Detect fast scrolling — use ref to avoid extra re-renders
+  const isScrollingRef = useRef(false);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      isScrollingRef.current = true;
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+      scrollTimerRef.current = setTimeout(() => {
+        isScrollingRef.current = false;
+      }, 150);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    };
+  }, []);
+  // Read during render — no state update needed
+  const isScrolling = isScrollingRef.current;
 
   return (
     <div
@@ -559,9 +582,9 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           ))}
         </thead>
         <tbody>
-          {paddingTop > 0 && (
+          {virtualRows.length > 0 && (
             <tr>
-              <td style={{ height: `${paddingTop}px` }} />
+              <td style={{ height: `${virtualRows[0].start}px`, padding: 0, border: "none" }} />
             </tr>
           )}
           {virtualRows.map((virtualRow) => {
@@ -570,6 +593,28 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             const isFlashing = row.original.id === flashTrackId;
             const isSelected = selectedIndices.has(virtualRow.index);
             const noFile = !row.original.filePath;
+
+            // During fast scroll, render lightweight rows with raw values (skip flexRender)
+            if (isScrolling && !isCurrentTrack) {
+              return (
+                <tr
+                  key={row.id}
+                  className="border-b border-n-800/30"
+                  style={{ height: `${ROW_HEIGHT}px` }}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
+                      className="px-2 py-0 truncate text-n-300"
+                      style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
+                    >
+                      {cell.getValue() as string}
+                    </td>
+                  ))}
+                </tr>
+              );
+            }
+
             return (
               <tr
                 key={row.id}
@@ -603,9 +648,9 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
               </tr>
             );
           })}
-          {paddingBottom > 0 && (
+          {virtualRows.length > 0 && (
             <tr>
-              <td style={{ height: `${paddingBottom}px` }} />
+              <td style={{ height: `${totalSize - virtualRows[virtualRows.length - 1].end}px`, padding: 0, border: "none" }} />
             </tr>
           )}
         </tbody>

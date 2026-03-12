@@ -67,7 +67,7 @@ impl SleepThreadState {
     fn volume(&self) -> f32 {
         unsafe {
             let guard = (*self.inner).lock().unwrap_or_else(|e| e.into_inner());
-            guard.as_ref().map(|i| i.volume).unwrap_or(1.0)
+            guard.as_ref().map(|i| i.volume).unwrap_or(0.8)
         }
     }
 
@@ -204,7 +204,7 @@ impl PlaybackState {
             current_track_id: None,
             queue: Vec::new(),
             queue_index: 0,
-            volume: 1.0,
+            volume: 0.8,
             duration: None,
             play_started_at: None,
             accumulated_position: 0.0,
@@ -238,7 +238,7 @@ impl PlaybackState {
 
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
 
-        let volume = guard.as_ref().map(|i| i.volume).unwrap_or(1.0);
+        let volume = guard.as_ref().map(|i| i.volume).unwrap_or(0.8);
         let queue = guard.as_ref().map(|i| i.queue.clone()).unwrap_or_default();
         let queue_index = guard.as_ref().map(|i| i.queue_index).unwrap_or(0);
         let shuffle = guard.as_ref().map(|i| i.shuffle).unwrap_or(false);
@@ -326,16 +326,27 @@ impl PlaybackState {
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
         if let Some(inner) = guard.as_mut() {
             let dur = std::time::Duration::from_secs_f64(position_secs.max(0.0));
+            let was_playing = !inner.sink.is_paused();
+            let vol = inner.volume;
+            // Mute and pause to prevent chirp/stutter during seek
+            inner.sink.set_volume(0.0);
+            if was_playing {
+                inner.sink.pause();
+            }
             inner
                 .sink
                 .try_seek(dur)
                 .map_err(|e| format!("Seek error: {}", e))?;
             inner.accumulated_position = position_secs;
-            if !inner.sink.is_paused() {
+            if was_playing {
+                inner.sink.play();
                 inner.play_started_at = Some(Instant::now());
             } else {
                 inner.play_started_at = None;
             }
+            // Brief delay to let the decoder settle, then restore volume
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            inner.sink.set_volume(vol);
         }
         Ok(())
     }
@@ -414,7 +425,7 @@ impl PlaybackState {
 
     pub fn volume(&self) -> f32 {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        guard.as_ref().map(|i| i.volume).unwrap_or(1.0)
+        guard.as_ref().map(|i| i.volume).unwrap_or(0.8)
     }
 
     pub fn set_volume(&self, vol: f32) -> Result<(), String> {
@@ -835,7 +846,7 @@ impl PlaybackState {
 
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
 
-        let volume = guard.as_ref().map(|i| i.volume).unwrap_or(1.0);
+        let volume = guard.as_ref().map(|i| i.volume).unwrap_or(0.8);
         let queue = guard.as_ref().map(|i| i.queue.clone()).unwrap_or_default();
         let queue_index = guard.as_ref().map(|i| i.queue_index).unwrap_or(0);
         let shuffle = guard.as_ref().map(|i| i.shuffle).unwrap_or(false);

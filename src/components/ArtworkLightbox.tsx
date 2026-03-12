@@ -52,7 +52,7 @@ export function ArtworkLightbox({
         return new Set(valid);
       }
     } catch { /* ignore */ }
-    return new Set<VisualizerMode>();
+    return new Set<VisualizerMode>(ALL_MODES.filter((m) => m !== "digital"));
   });
   const [vizDropdownOpen, setVizDropdownOpen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);

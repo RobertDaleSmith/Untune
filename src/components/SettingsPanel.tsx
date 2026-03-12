@@ -24,7 +24,9 @@ import {
   getHandoffConfig,
   configureHandoff,
   generateHandoffToken,
+  checkDependencies,
 } from "../lib/commands";
+import type { DependencyStatus } from "../lib/commands";
 import type { SyncStatus, Playlist } from "../lib/types";
 
 interface SettingsPanelProps {
@@ -62,6 +64,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [handoffConfigured, setHandoffConfigured] = useState(false);
   const [handoffCopied, setHandoffCopied] = useState(false);
 
+  // Dependencies state
+  const [deps, setDeps] = useState<DependencyStatus[]>([]);
+
   useEffect(() => {
     getPreference("ai_auto_tag").then((v) => setAiAutoTag(v === "true"));
     getPreference("assistant_tts_enabled").then((v) => setAssistantTts(v === "true"));
@@ -75,6 +80,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         setHandoffConfigured(true);
       }
     }).catch(() => {});
+    checkDependencies().then(setDeps).catch(() => {});
   }, []);
 
   const handleAutoTagToggle = useCallback((v: boolean) => {
@@ -559,6 +565,36 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 Use the same URL and token on all devices to enable cross-device resume
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Dependencies */}
+        <div className="px-6 py-4 border-b border-n-800">
+          <h3 className="text-[11px] font-medium text-n-500 uppercase tracking-wider mb-3">Dependencies</h3>
+          <p className="text-[11px] text-n-500 mb-3">Required for downloading from YouTube and other URLs</p>
+          <div className="space-y-2">
+            {deps.map((dep) => (
+              <div key={dep.name} className="flex items-start justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${dep.installed ? "bg-green-400" : "bg-red-400"}`} />
+                  <div className="min-w-0">
+                    <span className="text-[13px] text-n-200">{dep.name}</span>
+                    {dep.installed ? (
+                      <p className="text-[10px] text-n-600 truncate" title={dep.path ?? undefined}>
+                        {dep.version ?? dep.path}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-n-500">
+                        Not found — run: <code className="text-amber-400/80 font-mono">{dep.installHint}</code>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {deps.length === 0 && (
+              <p className="text-[11px] text-n-600">Checking...</p>
+            )}
           </div>
         </div>
 

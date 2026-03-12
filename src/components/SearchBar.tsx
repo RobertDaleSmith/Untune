@@ -34,7 +34,6 @@ export function SearchBar() {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 900);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   const handleSearch = useCallback(
@@ -69,13 +68,6 @@ export function SearchBar() {
     };
   }, []);
 
-  // Collapse based on window width
-  useEffect(() => {
-    const onResize = () => setCollapsed(window.innerWidth < 900);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
   const handleClear = useCallback(() => {
     setSearchQuery("");
     setSearchResults(null);
@@ -83,17 +75,16 @@ export function SearchBar() {
   }, [setSearchQuery, setSearchResults]);
 
   const closeOverlay = useCallback(() => {
-    if (searchQuery) return;
     setOverlayOpen(false);
-  }, [searchQuery]);
+  }, []);
 
   const openOverlay = useCallback(() => {
     setOverlayOpen(true);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  // Collapsed: icon button (force overlay if query is active)
-  if (collapsed && !overlayOpen && !searchQuery) {
+  // Icon-only until clicked
+  if (!overlayOpen && !searchQuery) {
     return (
       <button
         onClick={openOverlay}
@@ -105,9 +96,32 @@ export function SearchBar() {
     );
   }
 
-  // Collapsed + overlay open
-  if (collapsed) {
+  // Active search but overlay closed — show accent icon + X to clear
+  if (!overlayOpen && searchQuery) {
     return (
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={openOverlay}
+          className="text-accent drop-shadow-[0_0_6px_var(--color-accent)] transition-colors p-1"
+          title={placeholder}
+        >
+          <SearchIcon />
+        </button>
+        <button
+          onClick={handleClear}
+          className="text-n-500 hover:text-n-300 transition-colors p-0.5"
+          title="Clear search"
+        >
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
+  // Overlay open — show dropdown input
+  return (
       <div className="relative">
         <button
           onClick={closeOverlay}
@@ -146,32 +160,4 @@ export function SearchBar() {
         </div>
       </div>
     );
-  }
-
-  // Normal inline mode
-  return (
-    <div className="relative">
-      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-n-500 pointer-events-none">
-        <SearchIcon size={11} />
-      </span>
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={handleChange}
-        placeholder={placeholder}
-        className="bg-n-800 text-n-200 text-xs pl-6 pr-6 py-1 rounded-md border border-n-700 outline-none focus:border-n-500 w-full max-w-[140px] min-w-[80px] placeholder:text-n-500"
-      />
-      {searchQuery && (
-        <button
-          onClick={handleClear}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-n-500 hover:text-n-300 transition-colors"
-          title="Clear search"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      )}
-    </div>
-  );
 }

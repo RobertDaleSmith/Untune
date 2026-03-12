@@ -41,6 +41,24 @@ function MarqueeText({ children, className }: { children: React.ReactNode; class
   );
 }
 
+function RollingNumber({ value }: { value: number }) {
+  const H = 14;
+  return (
+    <span className="relative inline-block overflow-hidden" style={{ height: H, minWidth: 7 }}>
+      <span
+        className="flex flex-col transition-transform duration-150 ease-out"
+        style={{ transform: `translateY(${-(11 - value) * H}px)` }}
+      >
+        {Array.from({ length: 12 }, (_, i) => (
+          <span key={i} className="flex items-center justify-center" style={{ height: H, fontSize: 9, lineHeight: `${H}px` }}>
+            {11 - i}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
 interface PlaybackBarProps {
   tracks: Track[];
 }
@@ -107,7 +125,6 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
 
   const progressRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
-  const lastSeekRef = useRef(0);
   const preMuteVolumeRef = useRef(1.0);
   const [dragPosition, setDragPosition] = useState<number | null>(null);
   const [showRemaining, setShowRemaining] = useState(false);
@@ -147,10 +164,8 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
       e.preventDefault();
       isDraggingRef.current = true;
       setDragPosition(pos);
-      seek(pos);
-      lastSeekRef.current = Date.now();
     },
-    [computePosition, seek],
+    [computePosition],
   );
 
   useEffect(() => {
@@ -159,11 +174,6 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
       const pos = computePosition(e.clientX);
       if (pos == null) return;
       setDragPosition(pos);
-      const now = Date.now();
-      if (now - lastSeekRef.current > 150) {
-        seek(pos);
-        lastSeekRef.current = now;
-      }
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -186,29 +196,59 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
 
   const volumeRef = useRef<HTMLDivElement>(null);
   const isDraggingVolumeRef = useRef(false);
+  const [volumeDragging, setVolumeDragging] = useState(false);
+  const [volumeBubbleX, setVolumeBubbleX] = useState(0);
+  const [volumeBubbleY, setVolumeBubbleY] = useState(0);
+  const [showVolumePopup, setShowVolumePopup] = useState(false);
+  const muteBtnRef = useRef<HTMLButtonElement>(null);
+  const volumePopupRef = useRef<HTMLDivElement>(null);
+  const [volumePopupPos, setVolumePopupPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const volumePopupBarRef = useRef<HTMLDivElement>(null);
+  const isDraggingPopupVolumeRef = useRef(false);
 
+  // Volume scale: 0–10 maps to 0.0–0.8 (80%), 11 = 1.0 (100%).
+  // Bar covers 0–10. Dragging 8px+ past the right edge snaps to 11.
   const computeVolume = useCallback((clientX: number): number => {
     if (!volumeRef.current) return volume;
     const rect = volumeRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const raw = (clientX - rect.left) / rect.width; // 0–1 within bar, >1 past edge
+    if (raw > 1.0 && (clientX - rect.right) > 8) {
+      return 1.0; // snap to 11 = 100%
+    }
+    // 0–10 maps to 0–0.8
+    return Math.max(0, Math.min(0.8, raw * 0.8));
   }, [volume]);
+
+  const updateVolumeBubble = useCallback((clientX: number) => {
+    if (!volumeRef.current) return;
+    const rect = volumeRef.current.getBoundingClientRect();
+    const x = Math.min(rect.right, Math.max(rect.left, clientX));
+    setVolumeBubbleX(x);
+    setVolumeBubbleY(rect.top - 13);
+  }, []);
 
   const handleVolumeMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.preventDefault();
       isDraggingVolumeRef.current = true;
+      setVolumeDragging(true);
+      updateVolumeBubble(e.clientX);
       setVolume(computeVolume(e.clientX));
     },
-    [computeVolume, setVolume],
+    [computeVolume, setVolume, updateVolumeBubble],
   );
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!isDraggingVolumeRef.current) return;
+      updateVolumeBubble(e.clientX);
       setVolume(computeVolume(e.clientX));
     };
     const onUp = () => {
-      isDraggingVolumeRef.current = false;
+      if (isDraggingVolumeRef.current) {
+        isDraggingVolumeRef.current = false;
+        setVolumeDragging(false);
+      }
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -216,16 +256,69 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [computeVolume, setVolume]);
+  }, [computeVolume, setVolume, updateVolumeBubble]);
 
   const toggleMute = useCallback(() => {
     if (volume > 0) {
       preMuteVolumeRef.current = volume;
       setVolume(0);
     } else {
-      setVolume(preMuteVolumeRef.current || 1.0);
+      setVolume(preMuteVolumeRef.current || 0.8);
     }
   }, [volume, setVolume]);
+
+  // Popup volume slider (collapsed mode) — vertical slider
+  const computePopupVolume = useCallback((clientY: number): number => {
+    if (!volumePopupBarRef.current) return volume;
+    const rect = volumePopupBarRef.current.getBoundingClientRect();
+    // Bottom = 0, top = max. Past top by 8px snaps to 11.
+    const raw = 1 - (clientY - rect.top) / rect.height;
+    if (raw > 1.0 && (rect.top - clientY) > 8) {
+      return 1.0; // snap to 11
+    }
+    return Math.max(0, Math.min(0.8, raw * 0.8));
+  }, [volume]);
+
+  const handlePopupVolumeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingPopupVolumeRef.current = true;
+    setVolumeDragging(true);
+    setVolume(computePopupVolume(e.clientY));
+  }, [computePopupVolume, setVolume]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDraggingPopupVolumeRef.current) return;
+      setVolume(computePopupVolume(e.clientY));
+    };
+    const onUp = () => {
+      if (isDraggingPopupVolumeRef.current) {
+        isDraggingPopupVolumeRef.current = false;
+        setVolumeDragging(false);
+      }
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [computePopupVolume, setVolume]);
+
+  // Close volume popup on click outside
+  useEffect(() => {
+    if (!showVolumePopup) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        volumePopupRef.current && !volumePopupRef.current.contains(e.target as Node) &&
+        muteBtnRef.current && !muteBtnRef.current.contains(e.target as Node)
+      ) {
+        setShowVolumePopup(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showVolumePopup]);
 
   // Close device picker on click outside
   useEffect(() => {
@@ -271,8 +364,28 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
         <div className="flex justify-center min-w-0 overflow-hidden">
           <div className={`flex items-center gap-2 shrink-0 ${hasTrack ? "pointer-events-auto" : ""}`}>
             <button
+              onClick={() => {
+                const allIds = tracks.map((t) => t.id);
+                if (allIds.length === 0) return;
+                const randomIdx = Math.floor(Math.random() * allIds.length);
+                usePlaybackStore.getState().play(allIds, randomIdx, "songs");
+                if (!shuffle) toggleShuffle();
+              }}
+              className={`p-1.5 transition-colors hidden min-[900px]:block pointer-events-auto ${tracks.length === 0 ? disabledBtn : "text-n-500 hover:text-n-200"}`}
+              title="Play random"
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="12" height="12" rx="2" />
+                <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="10.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="5.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="10.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+            <button
               onClick={hasTrack ? toggleShuffle : undefined}
-              className={`p-1.5 transition-colors hidden sm:block ${!hasTrack ? disabledBtn : shuffle ? "text-accent" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors hidden min-[900px]:block ${!hasTrack ? disabledBtn : shuffle ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-200"}`}
               title={shuffle ? "Shuffle on" : "Shuffle off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -281,11 +394,11 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             </button>
             <button
               onClick={hasTrack ? prev : undefined}
-              className={`p-1.5 ${hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}`}
+              className={`p-1.5 hidden min-[600px]:block ${hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}`}
               title="Previous"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M3 2h2v12H3V2zm3 6l8-6v12L6 8z" />
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 8L15 2v12zM1 8l7-6v12z" />
               </svg>
             </button>
             <button
@@ -308,13 +421,13 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
               className={`p-1.5 ${hasTrack ? "text-n-400 hover:text-n-200 transition-colors" : disabledBtn}`}
               title="Next"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M11 2h2v12h-2V2zM2 2l8 6-8 6V2z" />
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 8L1 2v12zM15 8l-7-6v12z" />
               </svg>
             </button>
             <button
               onClick={hasTrack ? cycleRepeat : undefined}
-              className={`p-1.5 transition-colors relative hidden sm:block ${!hasTrack ? disabledBtn : repeatMode !== "off" ? "text-accent" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors relative hidden min-[900px]:block ${!hasTrack ? disabledBtn : repeatMode !== "off" ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-200"}`}
               title={repeatMode === "one" ? "Repeat one" : repeatMode === "all" ? "Repeat all" : "Repeat off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -322,7 +435,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                 <path d="M13 2v2h-2M3 14v-2h2" />
               </svg>
               {repeatMode === "one" && (
-                <span className="absolute -top-1.5 -right-1.5 text-[8px] font-bold leading-none">1</span>
+                <span className="absolute top-0 right-0 text-[7px] font-bold leading-none">1</span>
               )}
             </button>
             <button
@@ -331,7 +444,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                   .then((s) => setRadioEnabled(s.enabled))
                   .catch(console.error);
               }}
-              className={`p-1.5 transition-colors hidden sm:block ${radioEnabled ? "text-accent" : "text-n-500 hover:text-n-200"}`}
+              className={`p-1.5 transition-colors hidden min-[900px]:block ${radioEnabled ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-200"}`}
               title={radioEnabled ? "Radio on" : "Radio off"}
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -344,8 +457,12 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
           </div>
         </div>
 
-        {/* Col 2: Progress bar + track info — always centered */}
-        <div className="pointer-events-auto w-[300px] shrink-0 flex flex-col">
+        {/* Col 2: Activity indicator + Progress bar + track info — always centered */}
+        <div className="pointer-events-auto w-[300px] shrink-0 flex items-center">
+          <div className="hidden sm:block pointer-events-auto shrink-0 mr-1">
+            <ActivityIndicator />
+          </div>
+          <div className="flex flex-col flex-1 min-w-0">
           {/* Row 1: Track name */}
           <div data-tauri-drag-region className="h-[14px] flex justify-center items-center px-8">
             {playError ? (
@@ -380,11 +497,11 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             <div
               ref={progressRef}
               onMouseDown={handleProgressMouseDown}
-              className="flex-1 py-1.5 cursor-pointer group relative"
+              className="flex-1 py-1.5 cursor-pointer group relative z-10"
             >
               <div className="h-1 bg-n-700 rounded-full relative">
                 <div
-                  className="h-full bg-accent group-hover:bg-accent rounded-full transition-colors"
+                  className="h-full bg-accent group-hover:bg-accent rounded-full transition-colors shadow-[0_0_8px_var(--color-accent)]"
                   style={{ width: `${Math.min(100, progressPct)}%` }}
                 />
               </div>
@@ -419,15 +536,17 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
               </MarqueeText>
             )}
           </div>
+          </div>
         </div>
 
         {/* Col 3: Volume (centered) + Search (far right) */}
         <div className="flex items-center min-w-0 overflow-hidden">
           <div className="flex-1 flex justify-center min-w-0">
             <div className="pointer-events-auto flex items-center gap-2 shrink-0">
+              {/* Wide: normal mute button */}
               <button
                 onClick={toggleMute}
-                className="text-n-500 hover:text-n-300 transition-colors shrink-0"
+                className="hidden min-[900px]:block text-n-500 hover:text-n-300 transition-colors shrink-0"
                 title={volume === 0 ? "Unmute" : "Mute"}
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
@@ -447,16 +566,28 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
               <div
                 ref={volumeRef}
                 onMouseDown={handleVolumeMouseDown}
-                className="hidden sm:block w-[72px] py-2 cursor-pointer group relative"
+                className="hidden min-[900px]:block w-[72px] py-2 cursor-pointer group relative"
               >
-                <div className="h-1 bg-n-700 rounded-full relative">
+                <div className="h-1 bg-n-700 rounded-full relative overflow-visible">
                   <div
-                    className="h-full bg-accent group-hover:bg-accent rounded-full transition-colors"
-                    style={{ width: `${Math.min(100, volume * 100)}%` }}
+                    className={`h-full bg-accent group-hover:bg-accent rounded-full transition-colors ${volume > 0.8 ? "shadow-[0_0_8px_var(--color-accent)]" : ""}`}
+                    style={{ width: `${Math.min(108, (volume / 0.8) * 100)}%` }}
                   />
                 </div>
+                {/* Rolling number bubble — portaled to escape overflow:hidden */}
+                {volumeDragging && !showVolumePopup && createPortal(
+                  <div
+                    className="fixed pointer-events-none z-[9999]"
+                    style={{ top: volumeBubbleY, left: volumeBubbleX, transform: "translateX(-50%)" }}
+                  >
+                    <div className="text-n-400 font-bold tabular-nums" style={{ height: 14 }}>
+                      <RollingNumber value={volume > 0.8 ? 11 : Math.round(volume / 0.08)} />
+                    </div>
+                  </div>,
+                  document.body
+                )}
               </div>
-              <div className="relative hidden sm:block">
+              <div className="relative hidden min-[900px]:block">
                 <button
                   ref={deviceBtnRef}
                   onClick={() => {
@@ -469,7 +600,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                     }
                     setShowDevicePicker((v) => !v);
                   }}
-                  className={`p-1.5 transition-colors ${audioRoute?.isAirplay ? "text-accent" : "text-n-500 hover:text-n-300"}`}
+                  className={`p-1.5 transition-colors ${audioRoute?.isAirplay ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-300"}`}
                   title={audioRoute ? `Output: ${audioRoute.name}` : "Audio output"}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -478,44 +609,68 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
                   </svg>
                 </button>
               </div>
-              <div className="relative hidden sm:block">
-                <button
-                  ref={sleepBtnRef}
-                  onClick={() => {
-                    if (!showSleepMenu && sleepBtnRef.current) {
-                      const rect = sleepBtnRef.current.getBoundingClientRect();
-                      setSleepMenuPos({ top: rect.top, left: rect.right });
-                    }
-                    setShowSleepMenu((v) => !v);
-                  }}
-                  className={`p-1.5 transition-colors ${sleepTimerRemaining != null ? "text-accent" : "text-n-500 hover:text-n-300"}`}
-                  title={sleepTimerRemaining != null ? `Sleep in ${Math.ceil(sleepTimerRemaining / 60)}m` : "Sleep timer"}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                  </svg>
-                </button>
-              </div>
-              <div className="relative hidden sm:block">
-                <button
-                  onClick={toggleQueuePanel}
-                  className={`p-1.5 transition-colors ${queuePanelOpen ? "text-accent" : "text-n-500 hover:text-n-300"}`}
-                  title="Play queue"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <path d="M4 6h16M4 12h12M4 18h8M19 14v6M16 17h6" />
-                  </svg>
-                </button>
-              </div>
-              <div className="relative hidden sm:block">
-                <ActivityIndicator />
-              </div>
-              <div className="relative hidden sm:block">
-                <AssistantButton />
-              </div>
             </div>
           </div>
-          <div className="pointer-events-auto shrink-0 ml-4">
+          <div className="pointer-events-auto shrink-0 ml-4 flex items-center gap-1">
+            {/* Collapsed volume button — only visible below 900px */}
+            <button
+              ref={muteBtnRef}
+              onClick={() => {
+                if (!showVolumePopup && muteBtnRef.current) {
+                  const rect = muteBtnRef.current.getBoundingClientRect();
+                  setVolumePopupPos({ top: rect.top, left: rect.left + rect.width / 2 });
+                }
+                setShowVolumePopup((v) => !v);
+              }}
+              className="max-[899px]:block hidden p-1.5 text-n-500 hover:text-n-300 transition-colors shrink-0"
+              title={volume === 0 ? "Unmute" : "Mute"}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+                {volume === 0 ? (
+                  <>
+                    <path d="M8 1l-5 4H1v6h2l5 4V1z" />
+                    <path d="M11 5l4 6M15 5l-4 6" stroke="currentColor" strokeWidth="1.2" fill="none" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M8 1l-5 4H1v6h2l5 4V1z" />
+                    <path d="M11 5.5a3 3 0 010 5M13 3.5a6 6 0 010 9" stroke="currentColor" strokeWidth="1.2" fill="none" />
+                  </>
+                )}
+              </svg>
+            </button>
+            <div className="relative hidden sm:block">
+              <button
+                ref={sleepBtnRef}
+                onClick={() => {
+                  if (!showSleepMenu && sleepBtnRef.current) {
+                    const rect = sleepBtnRef.current.getBoundingClientRect();
+                    setSleepMenuPos({ top: rect.top, left: rect.right });
+                  }
+                  setShowSleepMenu((v) => !v);
+                }}
+                className={`p-1.5 transition-colors ${sleepTimerRemaining != null ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-300"}`}
+                title={sleepTimerRemaining != null ? `Sleep in ${Math.ceil(sleepTimerRemaining / 60)}m` : "Sleep timer"}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              </button>
+            </div>
+            <div className="relative hidden sm:block">
+              <button
+                onClick={toggleQueuePanel}
+                className={`p-1.5 transition-colors ${queuePanelOpen ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-300"}`}
+                title="Play queue"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M4 6h16M4 12h12M4 18h8M19 14v6M16 17h6" />
+                </svg>
+              </button>
+            </div>
+            <div className="relative hidden sm:block">
+              <AssistantButton />
+            </div>
             <SearchBar />
           </div>
         </div>
@@ -612,6 +767,51 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
             {audioDevices.length === 0 && (
               <div className="px-3 py-2 text-[11px] text-n-500">No devices found</div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Vertical volume popup for collapsed mode */}
+      {showVolumePopup && createPortal(
+        <div
+          ref={volumePopupRef}
+          className="fixed z-[9999] flex flex-col items-center"
+          style={{ top: volumePopupPos.top + 28, left: volumePopupPos.left, transform: "translateX(-50%)" }}
+        >
+          <div className="bg-n-800 border border-n-700 rounded-lg shadow-xl px-2 py-3 flex flex-col items-center gap-1.5">
+            <span className="text-[9px] text-n-400 font-bold tabular-nums -mt-1 mb-2">
+              {volume > 0.8 ? 11 : Math.round(volume / 0.08)}
+            </span>
+            <div
+              ref={volumePopupBarRef}
+              onMouseDown={handlePopupVolumeMouseDown}
+              className="w-1.5 h-[80px] bg-n-700 rounded-full relative cursor-pointer"
+            >
+              <div
+                className="absolute bottom-0 w-full bg-accent rounded-full"
+                style={{ height: `${Math.min(108, (volume / 0.8) * 100)}%` }}
+              />
+            </div>
+            <button
+              onClick={toggleMute}
+              className="text-n-500 hover:text-n-300 transition-colors"
+              title={volume === 0 ? "Unmute" : "Mute"}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+                {volume === 0 ? (
+                  <>
+                    <path d="M8 1l-5 4H1v6h2l5 4V1z" />
+                    <path d="M11 5l4 6M15 5l-4 6" stroke="currentColor" strokeWidth="1.2" fill="none" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M8 1l-5 4H1v6h2l5 4V1z" />
+                    <path d="M11 5.5a3 3 0 010 5" stroke="currentColor" strokeWidth="1.2" fill="none" />
+                  </>
+                )}
+              </svg>
+            </button>
           </div>
         </div>,
         document.body

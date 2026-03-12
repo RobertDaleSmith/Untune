@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 declare global {
   interface Window {
@@ -50,6 +50,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
   const positionRef = useRef(position);
   const isPlayingRef = useRef(isPlaying);
   const readyRef = useRef(false);
+  const [visible, setVisible] = useState(false);
 
   // Keep refs in sync
   positionRef.current = position;
@@ -101,6 +102,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
       if (playerRef.current && readyRef.current) {
         // Reuse existing player — much more reliable than destroy/recreate
         videoIdRef.current = videoId;
+        setVisible(false);
         playerRef.current.loadVideoById({
           videoId,
           startSeconds: Math.floor(positionRef.current),
@@ -141,6 +143,10 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
             }
           },
           onStateChange: (event: YT.OnStateChangeEvent) => {
+            // Reveal once actually playing (hides initial title overlay)
+            if (event.data === YT.PlayerState.PLAYING) {
+              setVisible(true);
+            }
             // Auto-recover from stuck states
             if (
               isPlayingRef.current &&
@@ -209,7 +215,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
   }, [isPlaying, tryPlay]);
 
   return (
-    <div className={className} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden" }}>
+    <div className={className} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", background: "#000" }}>
       {/* Scale iframe wider (16:9 → square) so video fills height and sides clip */}
       <div
         ref={containerRef}
@@ -222,15 +228,10 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
           height: "100%",
         }}
       />
-      {/* Hide YouTube branding overlay */}
-      <style>{`
-        .ytp-chrome-top,
-        .ytp-show-cards-title,
-        .ytp-pause-overlay,
-        .ytp-watermark {
-          display: none !important;
-        }
-      `}</style>
+      {/* Black cover hides white iframe flash until video is actually playing */}
+      {!visible && (
+        <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 1 }} />
+      )}
     </div>
   );
 }

@@ -15,17 +15,28 @@ use symphonia::core::{
 use symphonia::default::get_codecs;
 use symphonia::default::get_probe;
 
+use crate::gme_source::{self, GmeSource};
+use crate::psf_source::{self, PsfSource};
+
 const MAX_DECODE_RETRIES: usize = 3;
 
+enum AudioInner {
+    Symphonia {
+        decoder: Box<dyn symphonia::core::codecs::Decoder>,
+        format: Box<dyn FormatReader>,
+        track_id: u32,
+        buffer: Vec<i16>,
+        buffer_offset: usize,
+        channels: u16,
+        sample_rate: u32,
+        total_duration: Option<Duration>,
+    },
+    Gme(GmeSource),
+    Psf(PsfSource),
+}
+
 pub struct AudioSource {
-    decoder: Box<dyn symphonia::core::codecs::Decoder>,
-    format: Box<dyn FormatReader>,
-    track_id: u32,
-    buffer: Vec<i16>,
-    buffer_offset: usize,
-    channels: u16,
-    sample_rate: u32,
-    total_duration: Option<Duration>,
+    inner: AudioInner,
 }
 
 // SAFETY: AudioSource is only used behind a Mutex or passed to a single rodio Sink thread.
@@ -33,6 +44,28 @@ unsafe impl Send for AudioSource {}
 
 impl AudioSource {
     pub fn open(path: &str) -> Result<Self, String> {
+        // Check if this is a GME-supported format
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+
+        if gme_source::GME_EXTENSIONS.contains(&ext.as_str()) {
+            let gme = GmeSource::open(path)?;
+            return Ok(AudioSource {
+                inner: AudioInner::Gme(gme),
+            });
+        }
+
+        if psf_source::PSF_EXTENSIONS.contains(&ext.as_str()) {
+            let psf = PsfSource::open(path)?;
+            return Ok(AudioSource {
+                inner: AudioInner::Psf(psf),
+            });
+        }
+
+        // Standard Symphonia path
         let file = File::open(path)
             .map_err(|e| format!("Cannot open '{}': {}", path, e))?;
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -83,7 +116,6 @@ impl AudioSource {
                     return Err(format!("No audio data in '{}'", path));
                 }
                 Err(SymphError::SeekError(_)) => {
-                    // This is the error rodio panics on — we handle it gracefully
                     return Err(format!("Seek error during init for '{}' (unsupported file)", path));
                 }
                 Err(e) => {
@@ -119,47 +151,57 @@ impl AudioSource {
         };
 
         Ok(AudioSource {
-            decoder,
-            format,
-            track_id,
-            buffer: initial_buffer,
-            buffer_offset: 0,
-            channels,
-            sample_rate,
-            total_duration,
+            inner: AudioInner::Symphonia {
+                decoder,
+                format,
+                track_id,
+                buffer: initial_buffer,
+                buffer_offset: 0,
+                channels,
+                sample_rate,
+                total_duration,
+            },
         })
     }
+}
 
-    fn read_next_packet(&mut self) -> bool {
-        loop {
-            let packet = match self.format.next_packet() {
-                Ok(p) => p,
-                Err(_) => return false,
-            };
+fn symphonia_read_next_packet(
+    format: &mut Box<dyn FormatReader>,
+    decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
+    buffer: &mut Vec<i16>,
+    buffer_offset: &mut usize,
+    channels: &mut u16,
+    sample_rate: &mut u32,
+) -> bool {
+    loop {
+        let packet = match format.next_packet() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
 
-            if packet.track_id() != self.track_id {
-                continue;
-            }
+        if packet.track_id() != track_id {
+            continue;
+        }
 
-            match self.decoder.decode(&packet) {
-                Ok(decoded) => {
-                    let spec = *decoded.spec();
-                    self.channels = spec.channels.count() as u16;
-                    self.sample_rate = spec.rate;
-                    let duration =
-                        symphonia::core::units::Duration::from(decoded.capacity() as u64);
-                    let mut sample_buf = SampleBuffer::<i16>::new(duration, spec);
-                    sample_buf.copy_interleaved_ref(decoded);
-                    self.buffer = sample_buf.samples().to_vec();
-                    self.buffer_offset = 0;
-                    if self.buffer.is_empty() {
-                        continue; // skip empty decoded packets
-                    }
-                    return true;
+        match decoder.decode(&packet) {
+            Ok(decoded) => {
+                let spec = *decoded.spec();
+                *channels = spec.channels.count() as u16;
+                *sample_rate = spec.rate;
+                let duration =
+                    symphonia::core::units::Duration::from(decoded.capacity() as u64);
+                let mut sample_buf = SampleBuffer::<i16>::new(duration, spec);
+                sample_buf.copy_interleaved_ref(decoded);
+                *buffer = sample_buf.samples().to_vec();
+                *buffer_offset = 0;
+                if buffer.is_empty() {
+                    continue;
                 }
-                Err(SymphError::DecodeError(_)) => continue,
-                Err(_) => return false,
+                return true;
             }
+            Err(SymphError::DecodeError(_)) => continue,
+            Err(_) => return false,
         }
     }
 }
@@ -168,54 +210,111 @@ impl Iterator for AudioSource {
     type Item = i16;
 
     fn next(&mut self) -> Option<i16> {
-        if self.buffer_offset >= self.buffer.len() {
-            if !self.read_next_packet() {
-                return None;
+        match &mut self.inner {
+            AudioInner::Gme(gme) => gme.next(),
+            AudioInner::Psf(psf) => psf.next(),
+            AudioInner::Symphonia {
+                ref mut decoder,
+                ref mut format,
+                track_id,
+                ref mut buffer,
+                ref mut buffer_offset,
+                ref mut channels,
+                ref mut sample_rate,
+                ..
+            } => {
+                if *buffer_offset >= buffer.len() {
+                    if !symphonia_read_next_packet(
+                        format,
+                        decoder,
+                        *track_id,
+                        buffer,
+                        buffer_offset,
+                        channels,
+                        sample_rate,
+                    ) {
+                        return None;
+                    }
+                }
+                let sample = buffer[*buffer_offset];
+                *buffer_offset += 1;
+                Some(sample)
             }
         }
-        let sample = self.buffer[self.buffer_offset];
-        self.buffer_offset += 1;
-        Some(sample)
     }
 }
 
 impl Source for AudioSource {
     fn current_frame_len(&self) -> Option<usize> {
-        Some(self.buffer.len().saturating_sub(self.buffer_offset))
+        match &self.inner {
+            AudioInner::Gme(gme) => gme.current_frame_len(),
+            AudioInner::Psf(psf) => psf.current_frame_len(),
+            AudioInner::Symphonia { buffer, buffer_offset, .. } => {
+                Some(buffer.len().saturating_sub(*buffer_offset))
+            }
+        }
     }
 
     fn channels(&self) -> u16 {
-        self.channels
+        match &self.inner {
+            AudioInner::Gme(gme) => gme.channels(),
+            AudioInner::Psf(psf) => psf.channels(),
+            AudioInner::Symphonia { channels, .. } => *channels,
+        }
     }
 
     fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        match &self.inner {
+            AudioInner::Gme(gme) => gme.sample_rate(),
+            AudioInner::Psf(psf) => psf.sample_rate(),
+            AudioInner::Symphonia { sample_rate, .. } => *sample_rate,
+        }
     }
 
     fn total_duration(&self) -> Option<Duration> {
-        self.total_duration
+        match &self.inner {
+            AudioInner::Gme(gme) => gme.total_duration(),
+            AudioInner::Psf(psf) => psf.total_duration(),
+            AudioInner::Symphonia { total_duration, .. } => *total_duration,
+        }
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
-        use symphonia::core::formats::{SeekMode, SeekTo};
+        match &mut self.inner {
+            AudioInner::Gme(gme) => gme.try_seek(pos),
+            AudioInner::Psf(psf) => psf.try_seek(pos),
+            AudioInner::Symphonia {
+                ref mut format,
+                ref mut buffer,
+                ref mut buffer_offset,
+                ref mut decoder,
+                track_id,
+                ref mut channels,
+                ref mut sample_rate,
+                ..
+            } => {
+                use symphonia::core::formats::{SeekMode, SeekTo};
 
-        let time = Time {
-            seconds: pos.as_secs(),
-            frac: pos.subsec_nanos() as f64 / 1_000_000_000.0,
-        };
+                let time = Time {
+                    seconds: pos.as_secs(),
+                    frac: pos.subsec_nanos() as f64 / 1_000_000_000.0,
+                };
 
-        self.format
-            .seek(SeekMode::Accurate, SeekTo::Time { time, track_id: None })
-            .map_err(|_| rodio::source::SeekError::NotSupported {
-                underlying_source: "seek not supported for this format",
-            })?;
+                format
+                    .seek(SeekMode::Accurate, SeekTo::Time { time, track_id: None })
+                    .map_err(|_| rodio::source::SeekError::NotSupported {
+                        underlying_source: "seek not supported for this format",
+                    })?;
 
-        // Read next packet after seek to refill buffer
-        if !self.read_next_packet() {
-            self.buffer.clear();
-            self.buffer_offset = 0;
+                if !symphonia_read_next_packet(
+                    format, decoder, *track_id, buffer, buffer_offset, channels, sample_rate,
+                ) {
+                    buffer.clear();
+                    *buffer_offset = 0;
+                }
+
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 }

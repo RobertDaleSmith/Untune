@@ -9,6 +9,7 @@ use crate::models::ScannedFile;
 
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "aac", "flac", "aif", "aiff", "wav", "ogg", "alac",
+    "spc", "nsf", "nsfe", "gbs", "vgm", "vgz", "gym", "ay", "hes", "kss", "sap",
 ];
 
 pub fn scan_directory<F>(

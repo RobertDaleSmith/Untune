@@ -60,6 +60,7 @@ interface PlaybackState {
   videoMode: boolean;
   handoffInfo: HandoffTrackInfo | null;
   handoffDismissed: boolean;
+  _handoffDismissedAt: number;
   _handoffDebounce: ReturnType<typeof setTimeout> | null;
   _handoffAutoHide: ReturnType<typeof setTimeout> | null;
 
@@ -99,7 +100,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   isPlaying: false,
   position: 0,
   duration: null,
-  volume: 1.0,
+  volume: 0.8,
   shuffle: false,
   repeatMode: "off",
   queueSource: null,
@@ -117,6 +118,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   queuePanelOpen: false,
   handoffInfo: null,
   handoffDismissed: false,
+  _handoffDismissedAt: 0,
   _handoffDebounce: null,
   _handoffAutoHide: null,
 
@@ -124,25 +126,29 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   toggleVideoMode: () => set((s) => ({ videoMode: !s.videoMode })),
 
   checkHandoff: () => {
-    // Skip if banner is already showing or was recently dismissed
-    if (get().handoffInfo || get().handoffDismissed) return;
+    // Skip if banner is already showing or if currently playing locally
+    if (get().handoffInfo) return;
+    if (get().isPlaying) return;
     pullHandoffState()
       .then((info) => {
         if (info && info.trackId != null && info.deviceName) {
           const thisDevice = info.localDeviceName;
           if (thisDevice && info.deviceName === thisDevice) return;
-          const ageSeconds = Date.now() / 1000 - info.state.updatedAt;
-          if (ageSeconds < 86400) {
-            set({ handoffInfo: info, handoffDismissed: false });
-            const prev = get()._handoffAutoHide;
-            if (prev) clearTimeout(prev);
-            const timer = setTimeout(() => {
-              if (get().handoffInfo) {
-                set({ handoffInfo: null, handoffDismissed: true });
-              }
-            }, 15_000);
-            set({ _handoffAutoHide: timer });
-          }
+          const updatedAt = info.state.updatedAt;
+          const ageSeconds = Date.now() / 1000 - updatedAt;
+          if (ageSeconds > 86400) return;
+          // Only show if remote state is newer than our last dismiss
+          const dismissedAt = get()._handoffDismissedAt;
+          if (dismissedAt > 0 && updatedAt <= dismissedAt) return;
+          set({ handoffInfo: info, handoffDismissed: false });
+          const prev = get()._handoffAutoHide;
+          if (prev) clearTimeout(prev);
+          const timer = setTimeout(() => {
+            if (get().handoffInfo) {
+              set({ handoffInfo: null, handoffDismissed: true, _handoffDismissedAt: Date.now() / 1000 });
+            }
+          }, 15_000);
+          set({ _handoffAutoHide: timer });
         }
       })
       .catch(() => {});
@@ -160,7 +166,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   acceptHandoff: async () => {
     const info = get().handoffInfo;
     if (!info || info.trackId == null) return;
-    set({ handoffInfo: null, handoffDismissed: true });
+    set({ handoffInfo: null, handoffDismissed: true, _handoffDismissedAt: Date.now() / 1000 });
 
     // Build queue and play, then seek to handoff position
     const allTracks = useLibraryStore.getState().tracks;
@@ -184,7 +190,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   dismissHandoff: () => {
-    set({ handoffInfo: null, handoffDismissed: true });
+    set({ handoffInfo: null, handoffDismissed: true, _handoffDismissedAt: Date.now() / 1000 });
     dismissHandoffCmd().catch(() => {});
   },
 
@@ -212,7 +218,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set({ queueSource: newSource, _restoredFromSession: false });
     // User started playing — dismiss handoff banner
     if (get().handoffInfo) {
-      set({ handoffInfo: null, handoffDismissed: true });
+      set({ handoffInfo: null, handoffDismissed: true, _handoffDismissedAt: Date.now() / 1000 });
     }
     try {
       await playQueue(trackIds, startIndex);

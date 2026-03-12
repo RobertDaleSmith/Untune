@@ -125,11 +125,7 @@ function App() {
   // Check for handoff state when window regains focus
   useEffect(() => {
     const check = () => {
-      const store = usePlaybackStore.getState();
-      if (store.handoffDismissed) {
-        usePlaybackStore.setState({ handoffDismissed: false });
-      }
-      store.checkHandoff();
+      usePlaybackStore.getState().checkHandoff();
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") check();
@@ -164,12 +160,17 @@ function App() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // Reload tracks when a background task completes (artwork, ai-tagging)
+  // Reload tracks when a background task completes (artwork, ai-tagging, url-download)
   useEffect(() => {
     return useActivityStore.subscribe((s, prev) => {
       if (s.lastCompletedTaskId && s.lastCompletedTaskId !== prev.lastCompletedTaskId) {
         if (s.lastCompletedTaskId === "artwork" || s.lastCompletedTaskId === "ai-tagging" || s.lastCompletedTaskId === "find-tags" || s.lastCompletedTaskId === "url-download") {
           loadTracks();
+        }
+        // URL downloads may create playlists and add tracks — refresh sidebar + detail views
+        if (s.lastCompletedTaskId === "url-download") {
+          useNavigationStore.getState().requestSidebarRefresh();
+          useNavigationStore.getState().requestDetailRefresh();
         }
       }
     });
@@ -179,6 +180,33 @@ function App() {
   useEffect(() => {
     const unlisteners = [
       listen("menu-reimport", () => handleImportRef.current()),
+      listen("menu-add-files", async () => {
+        const selected = await open({
+          multiple: true,
+          directory: false,
+          filters: [{
+            name: "Audio Files",
+            extensions: ["mp3", "m4a", "aac", "flac", "aif", "aiff", "wav", "ogg", "alac", "opus",
+                         "spc", "nsf", "nsfe", "gbs", "vgm", "vgz", "gym", "ay", "hes", "kss", "sap",
+                         "psf", "minipsf", "psf2", "minipsf2"]
+          }],
+        });
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected];
+          const { importFiles } = await import("./lib/commands");
+          const result = await importFiles(paths);
+          if (result.imported > 0) loadTracks();
+        }
+      }),
+      listen("menu-add-folder", async () => {
+        const selected = await open({ directory: true, multiple: true });
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected];
+          const { importFiles } = await import("./lib/commands");
+          const result = await importFiles(paths);
+          if (result.imported > 0) loadTracks();
+        }
+      }),
       listen("menu-settings", () => setShowSettings(true)),
       listen<string>("theme-change", (event) => {
         const t = event.payload as "light" | "dark" | "system";

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationStore, type View } from "../stores/navigationStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useAssistantStore } from "../stores/assistantStore";
 import { getPlaylists, getPlaylistTracks, deletePlaylist, renamePlaylist, reorderPlaylists, createPlaylist, createPlaylistFolder, addTracksToPlaylist, exportPlaylistM3u, importPlaylistM3u } from "../lib/commands";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { ArtworkLightbox } from "./ArtworkLightbox";
@@ -185,6 +186,9 @@ export function Sidebar() {
     if (!rect) return;
     setLightboxRect(rect);
     setLightboxOpen(true);
+    // Close panels so they don't overlay the visualizer
+    if (usePlaybackStore.getState().queuePanelOpen) usePlaybackStore.getState().toggleQueuePanel();
+    useAssistantStore.getState().close();
   }, [currentTrackId]);
 
   const handleContextMenu = useCallback(
@@ -624,6 +628,7 @@ export function Sidebar() {
 
   return (
     <aside className="w-48 shrink-0 bg-n-900/30 border-r border-n-800 flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto min-h-0">
       <div className="h-[10px] shrink-0" />
       <div className="px-3 pb-1">
         <h2 className="text-[11px] font-semibold text-n-500 uppercase tracking-wider">
@@ -763,7 +768,7 @@ export function Sidebar() {
       </div>
       <nav
         ref={playlistNavRef}
-        className="px-1 flex-1 overflow-y-auto min-h-0"
+        className="px-1"
       >
         {rootItems.map((item) =>
           item.isFolder
@@ -772,6 +777,7 @@ export function Sidebar() {
         )}
       </nav>
 
+      </div>
       {/* Bottom: artwork */}
       <div className="shrink-0 border-t border-n-800">
         <div

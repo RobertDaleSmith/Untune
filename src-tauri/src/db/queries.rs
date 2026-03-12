@@ -118,7 +118,7 @@ pub fn get_tracks(
     };
 
     let sql = format!(
-        "SELECT {} FROM tracks ORDER BY {} {} LIMIT ? OFFSET ?",
+        "SELECT {} FROM tracks WHERE file_path IS NOT NULL ORDER BY {} {} LIMIT ? OFFSET ?",
         TRACK_COLUMNS, col, dir
     );
 
@@ -141,7 +141,7 @@ pub fn search_tracks(
     let sql = format!(
         "SELECT {} FROM tracks_fts fts
          JOIN tracks t ON t.id = fts.rowid
-         WHERE tracks_fts MATCH ?
+         WHERE tracks_fts MATCH ? AND t.file_path IS NOT NULL
          LIMIT ?",
         TRACK_COLUMNS_PREFIXED
     );
@@ -167,7 +167,7 @@ pub fn get_track_file_info(
 }
 
 pub fn get_track_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+    conn.query_row("SELECT COUNT(*) FROM tracks WHERE file_path IS NOT NULL", [], |row| row.get(0))
 }
 
 pub fn get_playlists(conn: &Connection) -> Result<Vec<Playlist>, rusqlite::Error> {
@@ -298,6 +298,7 @@ pub fn get_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Erro
                  MAX(year) as year,
                  MAX(artwork_hash) as artwork_hash
                FROM tracks
+               WHERE file_path IS NOT NULL
                GROUP BY COALESCE(album, '(Unknown Album)'), COALESCE(album_artist, artist, '(Unknown Artist)')
                ORDER BY COALESCE(album, '(Unknown Album)') COLLATE NOCASE";
 
@@ -321,6 +322,7 @@ pub fn get_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::Er
                  COUNT(DISTINCT COALESCE(album, '')) as album_count,
                  COUNT(*) as track_count
                FROM tracks
+               WHERE file_path IS NOT NULL
                GROUP BY COALESCE(artist, '(Unknown Artist)')
                ORDER BY COALESCE(artist, '(Unknown Artist)') COLLATE NOCASE";
 
@@ -340,6 +342,7 @@ pub fn get_genres(conn: &Connection) -> Result<Vec<GenreSummary>, rusqlite::Erro
                  COALESCE(genre, '(Unknown Genre)') as genre_name,
                  COUNT(*) as track_count
                FROM tracks
+               WHERE file_path IS NOT NULL
                GROUP BY COALESCE(genre, '(Unknown Genre)')
                ORDER BY COALESCE(genre, '(Unknown Genre)') COLLATE NOCASE";
 
@@ -410,7 +413,8 @@ pub fn update_artwork_for_album(
 
     let mut stmt = conn.prepare(
         "SELECT id FROM tracks
-         WHERE COALESCE(album, '(Unknown Album)') = ?1
+         WHERE file_path IS NOT NULL
+           AND COALESCE(album, '(Unknown Album)') = ?1
            AND COALESCE(album_artist, artist, '(Unknown Artist)') = ?2",
     )?;
     let rows = stmt.query_map(params![album, artist], |row| row.get::<_, i64>(0))?;
@@ -424,7 +428,8 @@ pub fn get_album_tracks(
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let sql = format!(
         "SELECT {} FROM tracks
-         WHERE COALESCE(album, '(Unknown Album)') = ?
+         WHERE file_path IS NOT NULL
+           AND COALESCE(album, '(Unknown Album)') = ?
            AND COALESCE(album_artist, artist, '(Unknown Artist)') = ?
          ORDER BY disc_number, track_number, title",
         TRACK_COLUMNS
@@ -441,7 +446,8 @@ pub fn get_artist_tracks(
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let sql = format!(
         "SELECT {} FROM tracks
-         WHERE COALESCE(artist, '(Unknown Artist)') = ?
+         WHERE file_path IS NOT NULL
+           AND COALESCE(artist, '(Unknown Artist)') = ?
          ORDER BY album, disc_number, track_number, title",
         TRACK_COLUMNS
     );
@@ -470,7 +476,7 @@ pub fn reorder_playlists(
 
 pub fn get_recently_added(conn: &Connection, limit: i64) -> Result<Vec<Track>, rusqlite::Error> {
     let sql = format!(
-        "SELECT {} FROM tracks ORDER BY date_added DESC LIMIT ?",
+        "SELECT {} FROM tracks WHERE file_path IS NOT NULL ORDER BY date_added DESC LIMIT ?",
         TRACK_COLUMNS
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -480,7 +486,7 @@ pub fn get_recently_added(conn: &Connection, limit: i64) -> Result<Vec<Track>, r
 
 pub fn get_recently_played(conn: &Connection, limit: i64) -> Result<Vec<Track>, rusqlite::Error> {
     let sql = format!(
-        "SELECT {} FROM tracks WHERE last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT ?",
+        "SELECT {} FROM tracks WHERE file_path IS NOT NULL AND last_played_at IS NOT NULL ORDER BY last_played_at DESC LIMIT ?",
         TRACK_COLUMNS
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -490,7 +496,7 @@ pub fn get_recently_played(conn: &Connection, limit: i64) -> Result<Vec<Track>, 
 
 pub fn get_top_played(conn: &Connection, limit: i64) -> Result<Vec<Track>, rusqlite::Error> {
     let sql = format!(
-        "SELECT {} FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?",
+        "SELECT {} FROM tracks WHERE file_path IS NOT NULL AND play_count > 0 ORDER BY play_count DESC LIMIT ?",
         TRACK_COLUMNS
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -600,7 +606,8 @@ pub fn get_genre_tracks(
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let sql = format!(
         "SELECT {} FROM tracks
-         WHERE COALESCE(genre, '(Unknown Genre)') = ?
+         WHERE file_path IS NOT NULL
+           AND COALESCE(genre, '(Unknown Genre)') = ?
          ORDER BY artist, album, disc_number, track_number, title",
         TRACK_COLUMNS
     );

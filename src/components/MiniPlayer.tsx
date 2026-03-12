@@ -36,10 +36,10 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
     : null;
 
   // Two-layer crossfade for blurred background
-  const [bgBottom, setBgBottom] = useState<string | null>(null);
+  const [bgBottom, setBgBottom] = useState<string | null>(currentArtworkUrl);
   const [bgTop, setBgTop] = useState<string | null>(null);
   const [bgTopReady, setBgTopReady] = useState(false);
-  const prevBgRef = useRef<string | null>(null);
+  const prevBgRef = useRef<string | null>(currentArtworkUrl);
 
   useEffect(() => {
     if (currentArtworkUrl === prevBgRef.current) return;
@@ -91,7 +91,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
           <div
             className="absolute inset-[-24px]"
-            style={{ filter: "var(--accent-filter)" }}
+            style={{ filter: "blur(20px) saturate(2) brightness(0.5)" }}
           >
             {bgBottom && (
               <img src={bgBottom} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -105,12 +105,12 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               />
             )}
           </div>
-          <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
+          <div className="absolute inset-0" style={{ backgroundColor: "rgba(10,10,10,0.35)" }} />
         </div>
       )}
 
-      {/* Main content row */}
-      <div className="flex-1 flex items-center min-h-0 relative z-10">
+      {/* Main content row — pb-1 accounts for the progress bar overlaid at bottom */}
+      <div className="flex-1 flex items-center min-h-0 relative z-10 pb-[2px]">
         {/* Transport controls */}
         <div className="flex items-center gap-1.5 pl-3 flex-shrink-0">
           {/* Play/Pause */}
@@ -141,7 +141,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
             className={`p-2 ${currentTrack ? "text-n-400 hover:text-n-200 transition-colors" : "text-n-700 cursor-default"}`}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" className={shiftHeld ? "scale-x-[-1]" : ""}>
-              <path d="M11 2h2v12h-2V2zM2 2l8 6-8 6V2z" />
+              <path d="M8 8L1 2v12zM15 8l-7-6v12z" />
             </svg>
           </button>
         </div>
@@ -196,17 +196,19 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         </button>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar — fixed to bottom, overlays content */}
       <div
         ref={progressRef}
         onClick={handleProgressClick}
         onMouseDown={(e) => e.stopPropagation()}
-        className="h-1 flex-shrink-0 bg-n-800 cursor-pointer group relative z-10"
+        className="absolute bottom-0 left-0 right-0 z-20 cursor-pointer group pt-2"
       >
-        <div
-          className="h-full bg-accent group-hover:bg-accent transition-colors"
-          style={{ width: `${Math.min(100, progressPct)}%` }}
-        />
+        <div className="h-0.5 group-hover:h-1 transition-all duration-150 bg-n-800 relative overflow-visible">
+          <div
+            className="absolute inset-y-0 left-0 bg-accent shadow-[0_0_8px_var(--color-accent)]"
+            style={{ width: `${Math.min(100, progressPct)}%` }}
+          />
+        </div>
       </div>
     </div>
   );

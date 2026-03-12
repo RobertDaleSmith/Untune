@@ -3,6 +3,8 @@ mod assistant;
 #[cfg(target_os = "macos")]
 mod airplay;
 mod audio;
+mod gme_source;
+mod psf_source;
 mod commands;
 mod db;
 mod handoff;
@@ -132,6 +134,24 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            // Disable App Nap so audio playback continues when the app is in the background.
+            // Without this, macOS suspends background threads and tracks stop at the end.
+            #[cfg(target_os = "macos")]
+            {
+                use objc::{msg_send, sel, sel_impl, class};
+                use cocoa::base::id;
+                use cocoa::foundation::NSString;
+                unsafe {
+                    let process_info: id = msg_send![class!(NSProcessInfo), processInfo];
+                    let reason = NSString::alloc(cocoa::base::nil).init_str("Audio playback");
+                    // NSActivityUserInitiatedAllowingIdleSystemSleep = 0x00FFFFFFULL
+                    let _activity: id = msg_send![process_info,
+                        beginActivityWithOptions: 0x00FFFFFF_u64
+                        reason: reason
+                    ];
+                }
+            }
+
             let db = Database::init(app.handle())?;
 
             // Read saved preferences before handing db to Tauri state
@@ -201,6 +221,7 @@ pub fn run() {
             app.manage(PlaybackState::new());
             app.manage(assistant);
             app.manage(AiTaggingState::new());
+            app.manage(commands::url_download::UrlDownloadQueue::new());
 
             // Set window/dock icon and ensure shadow
             if let Some(window) = app.get_webview_window("main") {
@@ -326,6 +347,12 @@ pub fn run() {
                                 .build(handle)?)
                             .build()?)
                         .separator()
+                        .item(&MenuItemBuilder::with_id("add-files", "Add Files...")
+                            .accelerator("CmdOrCtrl+O")
+                            .build(handle)?)
+                        .item(&MenuItemBuilder::with_id("add-folder", "Add Folder...")
+                            .accelerator("CmdOrCtrl+Shift+O")
+                            .build(handle)?)
                         .item(&MenuItemBuilder::with_id("add-from-url", "Add from URL...")
                             .accelerator("CmdOrCtrl+U")
                             .build(handle)?)
@@ -527,6 +554,8 @@ pub fn run() {
                 "export-ai-tags" => { let _ = app.emit("menu-export-ai-tags", ()); }
                 "import-ai-tags" => { let _ = app.emit("menu-import-ai-tags", ()); }
                 "export-playlist-m3u" => { let _ = app.emit("menu-export-playlist-m3u", ()); }
+                "add-files" => { let _ = app.emit("menu-add-files", ()); }
+                "add-folder" => { let _ = app.emit("menu-add-folder", ()); }
                 "add-from-url" => { let _ = app.emit("menu-add-from-url", ()); }
                 "toggle-mini-player" => { let _ = app.emit("toggle-mini-player", ()); }
                 "pb-toggle" => { let _ = app.emit("media-toggle", ()); }
@@ -616,6 +645,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::import::import_library,
+            commands::import::import_files,
             commands::import::reset_library,
             commands::tracks::export_library,
             commands::tracks::get_track_by_id,
@@ -718,6 +748,7 @@ pub fn run() {
             commands::url_download::find_missing_tags,
             commands::url_download::search_track_tags,
             commands::url_download::apply_track_tags,
+            commands::url_download::check_dependencies,
             commands::handoff::generate_handoff_token,
             commands::handoff::configure_handoff,
             commands::handoff::get_handoff_config,

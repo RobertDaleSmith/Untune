@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNavigationStore } from "../stores/navigationStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useColumnBrowserStore } from "../stores/columnBrowserStore";
@@ -73,22 +73,25 @@ export function ContentRouter() {
     // Detail views set their own status bar tracks
   }, [view, filteredTracks, tracks]);
 
+  // Track whether songs view has ever been shown so we can keep it mounted
+  const songsEverShown = useRef(false);
+  if (view === "songs") songsEverShown.current = true;
+  const isSongs = view === "songs";
+
+  // Render the non-songs overlay view
+  let overlayView: React.ReactNode = null;
   switch (view) {
-    case "songs":
-      return (
-        <div className="flex-1 flex flex-col min-h-0">
-          <ColumnBrowser tracks={displayTracks} />
-          <TrackTable tracks={filteredTracks} source="songs" />
-        </div>
-      );
     case "albums":
-      return <AlbumsView />;
+      overlayView = <AlbumsView />;
+      break;
     case "artists":
-      return <ArtistsView />;
+      overlayView = <ArtistsView />;
+      break;
     case "genres":
-      return <GenresView />;
+      overlayView = <GenresView />;
+      break;
     case "playlist":
-      return (
+      overlayView = (
         <DetailView
           key={`playlist-${playlistId}`}
           kind="playlist"
@@ -96,8 +99,9 @@ export function ContentRouter() {
           playlistId={playlistId!}
         />
       );
+      break;
     case "album-detail":
-      return (
+      overlayView = (
         <DetailView
           key={`album-${albumKey}-${albumArtist}`}
           kind="album"
@@ -107,8 +111,9 @@ export function ContentRouter() {
           albumArtist={albumArtist}
         />
       );
+      break;
     case "artist-detail":
-      return (
+      overlayView = (
         <DetailView
           key={`artist-${artistName}`}
           kind="artist"
@@ -116,8 +121,9 @@ export function ContentRouter() {
           artistName={artistName!}
         />
       );
+      break;
     case "genre-detail":
-      return (
+      overlayView = (
         <DetailView
           key={`genre-${genreName}`}
           kind="genre"
@@ -125,20 +131,28 @@ export function ContentRouter() {
           genreName={genreName!}
         />
       );
+      break;
     case "smart-view":
-      return (
+      overlayView = (
         <SmartViewDetail
           key={`smart-${smartViewId}`}
           viewId={smartViewId ?? ""}
           viewName={smartViewName ?? ""}
         />
       );
-    default:
-      return (
-        <div className="flex-1 flex flex-col min-h-0">
+      break;
+  }
+
+  return (
+    <>
+      {/* Songs view stays mounted (hidden) once first shown, so switching back is instant */}
+      {songsEverShown.current && (
+        <div className={`flex-1 flex flex-col min-h-0 ${isSongs ? "" : "hidden"}`}>
           <ColumnBrowser tracks={displayTracks} />
           <TrackTable tracks={filteredTracks} source="songs" />
         </div>
-      );
-  }
+      )}
+      {overlayView}
+    </>
+  );
 }

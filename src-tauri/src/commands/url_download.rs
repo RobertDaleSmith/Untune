@@ -1,4 +1,6 @@
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::Mutex as TokioMutex;
 
 use crate::db::{self, Database};
 use crate::import::artwork;
@@ -9,23 +11,42 @@ use crate::models::{MergedTrack, Track};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::tag::Accessor;
 
+/// Managed state: serial queue for URL downloads so they don't interleave.
+pub struct UrlDownloadQueue {
+    lock: Arc<TokioMutex<()>>,
+}
+
+impl UrlDownloadQueue {
+    pub fn new() -> Self {
+        Self {
+            lock: Arc::new(TokioMutex::new(())),
+        }
+    }
+}
+
 /// Queue a URL for background download. Returns immediately.
-/// Detects playlist URLs and routes them to the playlist pipeline.
+/// Downloads are serialized — only one runs at a time.
 #[tauri::command]
 pub async fn queue_url_download(
     app: AppHandle,
+    queue: State<'_, UrlDownloadQueue>,
     url: String,
 ) -> Result<(), String> {
+    // Validate yt-dlp is available before queuing (fail fast with user-visible error)
+    url_download::find_ytdlp(&app)?;
+
     let app_clone = app.clone();
+    let lock = queue.lock.clone();
 
     tokio::spawn(async move {
+        let _guard = lock.lock().await;
         if url_download::is_playlist_url(&url) {
             if let Err(e) = process_playlist_download(app_clone.clone(), &url).await {
                 log::error!("Playlist download failed for {}: {}", url, e);
                 url_download::emit_url_progress(&app_clone, "error", &format!("Failed: {}", e));
             }
         } else {
-            if let Err(e) = process_url_download(app_clone.clone(), &url).await {
+            if let Err(e) = process_single_download(app_clone.clone(), &url).await {
                 log::error!("URL download failed for {}: {}", url, e);
                 url_download::emit_url_progress(&app_clone, "error", &format!("Failed: {}", e));
             }
@@ -35,7 +56,22 @@ pub async fn queue_url_download(
     Ok(())
 }
 
-/// The actual download + metadata + DB insert pipeline (runs in background).
+/// Single URL download with its own progress events (not called from playlist pipeline).
+async fn process_single_download(
+    app: AppHandle,
+    url: &str,
+) -> Result<(), String> {
+    url_download::emit_url_progress(&app, "downloading", "Downloading...");
+    let result = process_url_download(app.clone(), url).await;
+    match &result {
+        Ok(()) => url_download::emit_url_progress(&app, "complete", "Download complete"),
+        Err(e) => url_download::emit_url_progress(&app, "error", &format!("Failed: {}", e)),
+    }
+    result
+}
+
+/// The actual download + metadata + DB insert pipeline.
+/// Does NOT emit "complete"/"error" progress — callers handle that.
 async fn process_url_download(
     app: AppHandle,
     url: &str,
@@ -53,7 +89,7 @@ async fn process_url_download(
             )
             .unwrap_or(false);
         if exists {
-            url_download::emit_url_progress(&app, "complete", "Already in library — skipped");
+            log::info!("URL already in library, skipping: {}", url);
             return Ok(());
         }
     }
@@ -67,7 +103,6 @@ async fn process_url_download(
     .map_err(|e| format!("Task join error: {}", e))??;
 
     // MusicBrainz lookup (async) to enrich metadata
-    url_download::emit_url_progress(&app, "tagging", "Looking up track details...");
     if let Some(mb) = lookup_metadata(&result).await {
         log::info!(
             "MusicBrainz match: \"{}\" by {} on \"{}\" ({:?})",
@@ -80,7 +115,7 @@ async fn process_url_download(
     }
 
     // Insert into DB
-    let track = {
+    {
         let mut conn = db.conn.lock().map_err(|e| e.to_string())?;
 
         db::batch_insert_tracks(&mut conn, &[result.merged_track])
@@ -101,22 +136,8 @@ async fn process_url_download(
         .map_err(|e| format!("Source URL update failed: {}", e))?;
 
         db::rebuild_fts(&conn).map_err(|e| format!("FTS rebuild failed: {}", e))?;
-
-        let sql = format!(
-            "SELECT {} FROM tracks WHERE file_path = ?1 ORDER BY id DESC LIMIT 1",
-            db::TRACK_COLUMNS
-        );
-        conn.query_row(&sql, rusqlite::params![result.file_path_str], |row| {
-            db::map_track_row(row)
-        })
-        .map_err(|e| format!("Failed to query inserted track: {}", e))?
     };
 
-    url_download::emit_url_progress(
-        &app,
-        "complete",
-        &format!("Added: {} - {}", track.artist.as_deref().unwrap_or(""), track.title),
-    );
     let _ = app.emit("library-changed", ());
     Ok(())
 }
@@ -253,7 +274,6 @@ fn download_and_read(app: &AppHandle, url: &str) -> Result<DownloadedTrack, Stri
     let download = url_download::download_audio(url, &download_dir, app)?;
 
     // Read metadata from the downloaded file via lofty
-    url_download::emit_url_progress(app, "processing", "Reading metadata...");
     let file_path_str = download.file_path.to_string_lossy().to_string();
 
     let (lofty_title, lofty_artist, lofty_album, track_number, duration, bit_rate, sample_rate, has_artwork) =
@@ -327,7 +347,6 @@ fn download_and_read(app: &AppHandle, url: &str) -> Result<DownloadedTrack, Stri
         .unwrap_or_else(|| title.clone());
 
     // Handle artwork
-    url_download::emit_url_progress(app, "artwork", "Processing artwork...");
     let artwork_dir = Database::artwork_dir(app).map_err(|e| e.to_string())?;
     let artwork_hash = if has_artwork {
         artwork::extract_and_save_artwork(&file_path_str, &artwork_dir)
@@ -335,10 +354,24 @@ fn download_and_read(app: &AppHandle, url: &str) -> Result<DownloadedTrack, Stri
         None
     };
     let artwork_hash = artwork_hash.or_else(|| {
-        download.thumbnail_path.as_ref().and_then(|thumb| {
-            let data = std::fs::read(thumb).ok()?;
-            artwork::hash_and_save(&data, &artwork_dir)
-        })
+        match download.thumbnail_path.as_ref() {
+            Some(thumb) => {
+                match std::fs::read(thumb) {
+                    Ok(data) => {
+                        log::info!("Using thumbnail for artwork: {} ({} bytes)", thumb.display(), data.len());
+                        artwork::hash_and_save(&data, &artwork_dir)
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read thumbnail {}: {}", thumb.display(), e);
+                        None
+                    }
+                }
+            }
+            None => {
+                log::info!("No thumbnail found for {}", file_path_str);
+                None
+            }
+        }
     });
 
     let size = std::fs::metadata(&download.file_path)
@@ -725,4 +758,61 @@ fn sqlite_datetime_now() -> String {
 
 fn is_leap(y: i64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+// ---------------------------------------------------------------------------
+// Dependency check
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyStatus {
+    pub name: String,
+    pub installed: bool,
+    pub version: Option<String>,
+    pub path: Option<String>,
+    pub install_hint: String,
+}
+
+#[tauri::command]
+pub async fn check_dependencies(app: AppHandle) -> Vec<DependencyStatus> {
+    let mut deps = Vec::new();
+
+    // yt-dlp
+    let ytdlp = url_download::find_ytdlp(&app).ok();
+    let ytdlp_version = ytdlp.as_ref().and_then(|p| {
+        std::process::Command::new(p)
+            .arg("--version")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+    });
+    deps.push(DependencyStatus {
+        name: "yt-dlp".to_string(),
+        installed: ytdlp.is_some(),
+        version: ytdlp_version,
+        path: ytdlp.map(|p| p.display().to_string()),
+        install_hint: "brew install yt-dlp".to_string(),
+    });
+
+    // ffmpeg
+    let ffmpeg = url_download::find_ffmpeg(&app);
+    let ffmpeg_version = ffmpeg.as_ref().and_then(|p| {
+        std::process::Command::new(p)
+            .arg("-version")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.lines().next().map(|l| l.to_string()))
+    });
+    deps.push(DependencyStatus {
+        name: "ffmpeg".to_string(),
+        installed: ffmpeg.is_some(),
+        version: ffmpeg_version,
+        path: ffmpeg.map(|p| p.display().to_string()),
+        install_hint: "brew install ffmpeg".to_string(),
+    });
+
+    deps
 }

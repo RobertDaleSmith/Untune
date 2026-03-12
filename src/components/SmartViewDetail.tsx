@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getSmartViewTracks } from "../lib/commands";
 import { TrackTable } from "./TrackTable";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useNavigationStore } from "../stores/navigationStore";
 import type { Track } from "../lib/types";
 
 interface SmartViewDetailProps {
@@ -12,6 +13,7 @@ interface SmartViewDetailProps {
 export function SmartViewDetail({ viewId, viewName }: SmartViewDetailProps) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
+  const detailVersion = useNavigationStore((s) => s.detailVersion);
 
   useEffect(() => {
     setLoading(true);
@@ -22,7 +24,7 @@ export function SmartViewDetail({ viewId, viewName }: SmartViewDetailProps) {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [viewId]);
+  }, [viewId, detailVersion]);
 
   if (loading) {
     return (

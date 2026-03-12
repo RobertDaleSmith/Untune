@@ -8,7 +8,7 @@ export function AssistantButton() {
     <button
       onClick={toggle}
       className={`p-1.5 transition-colors relative ${
-        isActive ? "text-accent" : "text-n-500 hover:text-n-300"
+        isActive ? "text-accent drop-shadow-[0_0_6px_var(--color-accent)]" : "text-n-500 hover:text-n-300"
       }`}
       title="Assistant (Cmd+J)"
     >

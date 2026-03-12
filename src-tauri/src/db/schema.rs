@@ -75,6 +75,9 @@ fn migrate_sync(conn: &Connection) {
 
 fn migrate_source_url(conn: &Connection) {
     let _ = conn.execute_batch("ALTER TABLE tracks ADD COLUMN source_url TEXT");
+    let _ = conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_source_url ON tracks(source_url) WHERE source_url IS NOT NULL"
+    );
 }
 
 pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
