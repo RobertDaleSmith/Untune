@@ -47,23 +47,18 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
     if (!currentArtworkUrl) {
       setBgTopReady(false);
       setBgTop(null);
-      const t = setTimeout(() => setBgBottom(null), 800);
+      const t = setTimeout(() => setBgBottom(null), 600);
       return () => clearTimeout(t);
     }
     setBgTopReady(false);
-    const img = new Image();
-    img.onload = () => {
-      setBgTop(currentArtworkUrl);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setBgTopReady(true));
-      });
-      setTimeout(() => {
-        setBgBottom(currentArtworkUrl);
-        setBgTopReady(false);
-        setBgTop(null);
-      }, 900);
-    };
-    img.src = currentArtworkUrl;
+    setBgTop(currentArtworkUrl);
+    requestAnimationFrame(() => setBgTopReady(true));
+    const t = setTimeout(() => {
+      setBgBottom(currentArtworkUrl);
+      setBgTopReady(false);
+      setBgTop(null);
+    }, 700);
+    return () => clearTimeout(t);
   }, [currentArtworkUrl]);
 
   const progressPct = duration && duration > 0 ? (position / duration) * 100 : 0;
@@ -89,22 +84,22 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
       {/* Blurred artwork background */}
       {(bgBottom || bgTop) && (
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
-          <div
-            className="absolute inset-[-24px]"
-            style={{ filter: "blur(20px) saturate(2) brightness(0.5)" }}
-          >
-            {bgBottom && (
-              <img src={bgBottom} alt="" className="absolute inset-0 w-full h-full object-cover" />
-            )}
-            {bgTop && (
-              <img
-                src={bgTop}
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-800 ease-in-out"
-                style={{ opacity: bgTopReady ? 1 : 0 }}
-              />
-            )}
-          </div>
+          {bgBottom && (
+            <img
+              src={bgBottom}
+              alt=""
+              className="absolute inset-[-24px] w-[calc(100%+48px)] h-[calc(100%+48px)] object-cover"
+              style={{ filter: "blur(20px) saturate(2) brightness(0.5)" }}
+            />
+          )}
+          {bgTop && (
+            <img
+              src={bgTop}
+              alt=""
+              className="absolute inset-[-24px] w-[calc(100%+48px)] h-[calc(100%+48px)] object-cover transition-opacity duration-500 ease-in-out"
+              style={{ filter: "blur(20px) saturate(2) brightness(0.5)", opacity: bgTopReady ? 1 : 0, willChange: "opacity" }}
+            />
+          )}
           <div className="absolute inset-0" style={{ backgroundColor: "rgba(10,10,10,0.35)" }} />
         </div>
       )}

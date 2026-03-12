@@ -318,12 +318,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     };
   }, [contextMenu]);
 
-  // Start with minimal overscan for fast initial paint, then increase for smooth scrolling
-  const [overscan, setOverscan] = useState(20);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setOverscan(200));
-    return () => cancelAnimationFrame(frame);
-  }, [rows]);
+  const overscan = 40;
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -594,7 +589,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             const isSelected = selectedIndices.has(virtualRow.index);
             const noFile = !row.original.filePath;
 
-            // During fast scroll, render lightweight rows with raw values (skip flexRender)
+            // During fast scroll, render lightweight rows (no event handlers, drag, selection logic)
             if (isScrolling && !isCurrentTrack) {
               return (
                 <tr
@@ -608,7 +603,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                       className="px-2 py-0 truncate text-n-300"
                       style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
                     >
-                      {cell.getValue() as string}
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}
                 </tr>
@@ -626,11 +621,11 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                 onContextMenu={(e) => handleContextMenu(e, virtualRow.index)}
                 className={`border-b border-n-800/30 cursor-default ${
                   isCurrentTrack
-                    ? `bg-accent-row hover:bg-accent-row-hover${isFlashing ? " animate-row-flash" : ""}`
+                    ? `bg-accent/25 hover:bg-accent/30 border-l-2 border-l-accent${isFlashing ? " animate-row-flash" : ""}`
                     : isSelected
-                      ? "bg-accent/15"
+                      ? "bg-n-100/10 hover:bg-n-100/15"
                       : "hover:bg-n-800/50"
-                }${isSelected ? " ring-1 ring-accent/30" : ""}`}
+                }${isSelected && !isCurrentTrack ? " ring-1 ring-n-400/30" : ""}`}
                 style={{ height: `${ROW_HEIGHT}px` }}
               >
                 {row.getVisibleCells().map((cell) => (

@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import {
   searchArtwork,
   applyArtworkFromUrl,
+  applyArtworkFromData,
+  getAlbumFolderImages,
   type ArtworkSearchResult,
   type ApplyArtworkResult,
 } from "../lib/commands";
@@ -22,6 +24,7 @@ export function ArtworkSearchModal({
   const defaultQuery = [artist, album].filter(Boolean).join(" ");
   const [query, setQuery] = useState(defaultQuery);
   const [results, setResults] = useState<ArtworkSearchResult[]>([]);
+  const [folderImages, setFolderImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,15 +46,22 @@ export function ArtworkSearchModal({
   }, []);
 
   useEffect(() => {
-    searchArtwork(artist, album)
-      .then((r) => {
-        setResults(r);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(String(e));
-        setLoading(false);
-      });
+    // Fetch iTunes results and folder images in parallel
+    let cancelled = false;
+    Promise.all([
+      searchArtwork(artist, album),
+      getAlbumFolderImages(album, artist),
+    ]).then(([itunes, folder]) => {
+      if (cancelled) return;
+      setResults(itunes);
+      setFolderImages(folder);
+      setLoading(false);
+    }).catch((e) => {
+      if (cancelled) return;
+      setError(String(e));
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [artist, album]);
 
   const handleSelect = useCallback(
@@ -59,6 +69,20 @@ export function ArtworkSearchModal({
       setApplying(true);
       try {
         const applied = await applyArtworkFromUrl(result.fullUrl, album, artist);
+        onApply(applied);
+      } catch (e) {
+        setError(String(e));
+        setApplying(false);
+      }
+    },
+    [album, artist, onApply],
+  );
+
+  const handleSelectFolder = useCallback(
+    async (dataUrl: string) => {
+      setApplying(true);
+      try {
+        const applied = await applyArtworkFromData(dataUrl, album, artist);
         onApply(applied);
       } catch (e) {
         setError(String(e));
@@ -175,37 +199,67 @@ export function ArtworkSearchModal({
             <p className="text-xs text-red-400 text-center py-8">{error}</p>
           )}
 
-          {!loading && !applying && !error && results.length === 0 && (
+          {/* Folder images from album directory */}
+          {!loading && !applying && folderImages.length > 0 && (
+            <>
+              <p className="text-[10px] text-n-500 uppercase tracking-wide mb-2">From Album Folder</p>
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                {folderImages.map((dataUrl, i) => (
+                  <button
+                    key={`folder-${i}`}
+                    className="group flex flex-col items-center text-center rounded-lg p-1.5 hover:bg-n-800 transition-colors"
+                    onClick={() => handleSelectFolder(dataUrl)}
+                  >
+                    <div className="w-full aspect-square rounded overflow-hidden bg-n-800 ring-2 ring-transparent group-hover:ring-accent transition-all">
+                      <img
+                        src={dataUrl}
+                        alt={`Folder image ${i + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className="text-[10px] text-n-400 mt-1.5">Local</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {!loading && !applying && !error && results.length === 0 && folderImages.length === 0 && (
             <p className="text-xs text-n-500 text-center py-8">
               No results found
             </p>
           )}
 
           {!loading && !applying && !error && results.length > 0 && (
-            <div className="grid grid-cols-4 gap-3">
-              {results.map((r, i) => (
-                <button
-                  key={i}
-                  className="group flex flex-col items-center text-center rounded-lg p-1.5 hover:bg-n-800 transition-colors"
-                  onClick={() => handleSelect(r)}
-                >
-                  <div className="w-full aspect-square rounded overflow-hidden bg-n-800 ring-2 ring-transparent group-hover:ring-accent transition-all">
-                    <img
-                      src={r.thumbnailUrl}
-                      alt={r.albumName}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <span className="text-[10px] text-n-300 mt-1.5 line-clamp-1 w-full">
-                    {r.albumName}
-                  </span>
-                  <span className="text-[10px] text-n-500 line-clamp-1 w-full">
-                    {r.artistName}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <>
+              {folderImages.length > 0 && (
+                <p className="text-[10px] text-n-500 uppercase tracking-wide mb-2">From iTunes</p>
+              )}
+              <div className="grid grid-cols-4 gap-3">
+                {results.map((r, i) => (
+                  <button
+                    key={i}
+                    className="group flex flex-col items-center text-center rounded-lg p-1.5 hover:bg-n-800 transition-colors"
+                    onClick={() => handleSelect(r)}
+                  >
+                    <div className="w-full aspect-square rounded overflow-hidden bg-n-800 ring-2 ring-transparent group-hover:ring-accent transition-all">
+                      <img
+                        src={r.thumbnailUrl}
+                        alt={r.albumName}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                    <span className="text-[10px] text-n-300 mt-1.5 line-clamp-1 w-full">
+                      {r.albumName}
+                    </span>
+                    <span className="text-[10px] text-n-500 line-clamp-1 w-full">
+                      {r.artistName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
 

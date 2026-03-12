@@ -629,25 +629,18 @@ function App() {
     if (!currentArtworkUrl) {
       setBgTopReady(false);
       setBgTop(null);
-      const t = setTimeout(() => setBgBottom(null), 800);
+      const t = setTimeout(() => setBgBottom(null), 600);
       return () => clearTimeout(t);
     }
-    // Preload the new image, then fade it in on top of the old one
     setBgTopReady(false);
-    const img = new Image();
-    img.onload = () => {
-      setBgTop(currentArtworkUrl);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setBgTopReady(true));
-      });
-      // After fade completes, promote top to bottom and clear top
-      setTimeout(() => {
-        setBgBottom(currentArtworkUrl);
-        setBgTopReady(false);
-        setBgTop(null);
-      }, 900);
-    };
-    img.src = currentArtworkUrl;
+    setBgTop(currentArtworkUrl);
+    requestAnimationFrame(() => setBgTopReady(true));
+    const t = setTimeout(() => {
+      setBgBottom(currentArtworkUrl);
+      setBgTopReady(false);
+      setBgTop(null);
+    }, 700);
+    return () => clearTimeout(t);
   }, [currentArtworkUrl]);
 
   const handleImportComplete = useCallback(() => {
@@ -730,28 +723,24 @@ function App() {
       {/* Blurred artwork background */}
       {showAlbumAccent && (
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
-          <div
-            className="absolute inset-[-48px] will-change-[filter]"
-            style={{ filter: "var(--accent-filter)" }}
-          >
-            {/* Bottom layer: previous/stable artwork */}
-            {bgBottom && (
-              <img
-                src={bgBottom}
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            )}
-            {/* Top layer: incoming artwork, fades in over bottom */}
-            {bgTop && (
-              <img
-                src={bgTop}
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-800 ease-in-out"
-                style={{ opacity: bgTopReady ? 1 : 0 }}
-              />
-            )}
-          </div>
+          {/* Bottom layer: previous/stable artwork — blur baked per-image for GPU compositing */}
+          {bgBottom && (
+            <img
+              src={bgBottom}
+              alt=""
+              className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover"
+              style={{ filter: "var(--accent-filter)", willChange: "auto" }}
+            />
+          )}
+          {/* Top layer: incoming artwork, fades in over bottom */}
+          {bgTop && (
+            <img
+              src={bgTop}
+              alt=""
+              className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover transition-opacity duration-500 ease-in-out"
+              style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0, willChange: "opacity" }}
+            />
+          )}
           {/* Theme-adaptive overlay for readability */}
           <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
         </div>

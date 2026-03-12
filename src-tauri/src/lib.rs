@@ -699,6 +699,8 @@ pub fn run() {
             commands::artwork::get_track_all_artworks,
             commands::artwork::search_artwork,
             commands::artwork::apply_artwork_from_url,
+            commands::artwork::get_album_folder_images,
+            commands::artwork::apply_artwork_from_data,
             commands::preferences::get_preference,
             commands::preferences::set_preference,
             commands::lyrics::fetch_lyrics,

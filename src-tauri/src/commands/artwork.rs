@@ -184,6 +184,104 @@ pub async fn apply_artwork_from_url(
     })
 }
 
+/// Apply artwork from raw bytes (base64 data URL) to all tracks of an album.
+#[tauri::command]
+pub fn apply_artwork_from_data(
+    data_url: String,
+    album: String,
+    artist: String,
+    app: AppHandle,
+    db: State<'_, Database>,
+) -> Result<ApplyArtworkResult, String> {
+    // Parse data URL: "data:image/jpeg;base64,..."
+    let b64_start = data_url.find(",").ok_or("Invalid data URL")? + 1;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data_url[b64_start..])
+        .map_err(|e| format!("Base64 decode failed: {}", e))?;
+
+    let artwork_dir = Database::artwork_dir(&app).map_err(|e| e.to_string())?;
+    let artwork_hash =
+        hash_and_save(&bytes, &artwork_dir).ok_or_else(|| "Failed to save artwork".to_string())?;
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let updated_track_ids = db::update_artwork_for_album(&conn, &artwork_hash, &album, &artist)
+        .map_err(|e| format!("Failed to update tracks: {}", e))?;
+
+    Ok(ApplyArtworkResult {
+        artwork_hash,
+        updated_track_ids,
+    })
+}
+
+/// Find all image files in the album directory for a given album+artist.
+/// Returns data URLs for each image found.
+#[tauri::command]
+pub fn get_album_folder_images(
+    album: String,
+    artist: String,
+    db: State<'_, Database>,
+) -> Result<Vec<String>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Find a track with a file_path for this album+artist
+    let file_path: Option<String> = conn
+        .query_row(
+            "SELECT file_path FROM tracks
+             WHERE file_path IS NOT NULL
+               AND COALESCE(album, '(Unknown Album)') = ?1
+               AND COALESCE(album_artist, artist, '(Unknown Artist)') = ?2
+             LIMIT 1",
+            rusqlite::params![album, artist],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let Some(fp) = file_path else {
+        return Ok(vec![]);
+    };
+
+    let parent = std::path::Path::new(&fp).parent().ok_or("No parent dir")?;
+    if !parent.exists() {
+        return Ok(vec![]);
+    }
+
+    let image_exts = ["jpg", "jpeg", "png", "webp", "bmp", "gif"];
+    let mut urls = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !image_exts.contains(&ext.as_str()) {
+                continue;
+            }
+            if let Ok(data) = std::fs::read(&path) {
+                if data.is_empty() {
+                    continue;
+                }
+                let mime = match ext.as_str() {
+                    "png" => "image/png",
+                    "webp" => "image/webp",
+                    "bmp" => "image/bmp",
+                    "gif" => "image/gif",
+                    _ => "image/jpeg",
+                };
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                urls.push(format!("data:{};base64,{}", mime, b64));
+            }
+        }
+    }
+
+    Ok(urls)
+}
+
 fn urlencoded(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {

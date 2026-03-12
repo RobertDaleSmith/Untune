@@ -336,6 +336,21 @@ export async function applyArtworkFromUrl(
   return invoke<ApplyArtworkResult>("apply_artwork_from_url", { imageUrl, album, artist });
 }
 
+export async function applyArtworkFromData(
+  dataUrl: string,
+  album: string,
+  artist: string,
+): Promise<ApplyArtworkResult> {
+  return invoke<ApplyArtworkResult>("apply_artwork_from_data", { dataUrl, album, artist });
+}
+
+export async function getAlbumFolderImages(
+  album: string,
+  artist: string,
+): Promise<string[]> {
+  return invoke<string[]>("get_album_folder_images", { album, artist });
+}
+
 // --- Audio Devices ---
 
 export interface AudioRoute {
