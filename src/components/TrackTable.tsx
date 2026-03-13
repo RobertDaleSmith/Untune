@@ -8,7 +8,6 @@ import {
   type SortingState,
   type ColumnSizingState,
 } from "@tanstack/react-table";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Track } from "../lib/types";
 import { formatDuration, formatDate } from "../utils/formatters";
 import { usePlaybackStore } from "../stores/playbackStore";
@@ -322,34 +321,67 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     };
   }, [contextMenu]);
 
-  const getScrollElement = useCallback(() => parentRef.current, []);
-  const estimateSize = useCallback(() => ROW_HEIGHT, []);
+  // Windowed rendering: render a large fixed window of rows.
+  // Between window shifts, scrolling is 100% native (zero JS).
+  const WINDOW_SIZE = 500;
+  const SHIFT_MARGIN = 150; // shift when this close to window edge
+  const [windowStart, setWindowStart] = useState(0);
 
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement,
-    estimateSize,
-    overscan: 100,
-  });
+  // Shift the window when scrolling near its edges
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    let rafId = 0;
+    let lastStart = 0;
 
-  // Auto-scroll to the playing track when it changes.
-  // Use virtualizer.scrollToIndex for instant, flicker-free scrolling.
-  // A single rAF fallback handles the edge case where the PlaybackBar
-  // appears/disappears and changes the container height.
+    const checkWindow = () => {
+      const scrollTop = el.scrollTop;
+      const viewportRows = Math.ceil(el.clientHeight / ROW_HEIGHT);
+      const topRow = Math.floor(scrollTop / ROW_HEIGHT);
+
+      const windowEnd = lastStart + WINDOW_SIZE;
+      const needsShift =
+        (topRow < lastStart + SHIFT_MARGIN && lastStart > 0) ||
+        (topRow + viewportRows > windowEnd - SHIFT_MARGIN && windowEnd < rows.length);
+
+      if (needsShift) {
+        const newStart = Math.max(0, Math.min(rows.length - WINDOW_SIZE, topRow - Math.floor(WINDOW_SIZE / 2)));
+        if (newStart !== lastStart) {
+          lastStart = newStart;
+          setWindowStart(newStart);
+        }
+      }
+      rafId = requestAnimationFrame(checkWindow);
+    };
+    rafId = requestAnimationFrame(checkWindow);
+    return () => cancelAnimationFrame(rafId);
+  }, [rows.length]);
+
+  const windowEnd = Math.min(windowStart + WINDOW_SIZE, rows.length);
+  const topPad = windowStart * ROW_HEIGHT;
+  const bottomPad = (rows.length - windowEnd) * ROW_HEIGHT;
+
+  // Auto-scroll to the playing track when it changes
   useEffect(() => {
     if (currentTrackId == null) return;
     const idx = rows.findIndex((r) => r.original.id === currentTrackId);
     if (idx < 0) return;
+    const el = parentRef.current;
+    if (!el) return;
 
-    // Immediate scroll — virtualizer pre-computes visible rows synchronously
-    virtualizer.scrollToIndex(idx, { align: "auto" });
+    // Ensure the target row is within the window
+    if (idx < windowStart || idx >= windowEnd) {
+      const newStart = Math.max(0, Math.min(rows.length - WINDOW_SIZE, idx - Math.floor(WINDOW_SIZE / 2)));
+      setWindowStart(newStart);
+    }
 
-    // Follow-up rAF to correct for any layout shift (e.g. PlaybackBar appearing)
-    const frame = requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(idx, { align: "auto" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [currentTrackId, rows, scrollToNowPlaying, virtualizer]);
+    const targetTop = idx * ROW_HEIGHT;
+    const viewportHeight = el.clientHeight;
+    const scrollTop = el.scrollTop;
+    if (targetTop < scrollTop || targetTop + ROW_HEIGHT > scrollTop + viewportHeight) {
+      el.scrollTop = targetTop - viewportHeight / 2 + ROW_HEIGHT / 2;
+    }
+  }, [currentTrackId, rows, scrollToNowPlaying, windowStart, windowEnd]);
 
   // Flash the playing row when jump-to-now-playing is triggered
   const prevScrollSignal = useRef(scrollToNowPlaying);
@@ -409,7 +441,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             });
             if (idx >= 0) {
               selectSingle(idx);
-              virtualizer.scrollToOffset(idx * ROW_HEIGHT, { align: "start" });
+              if (parentRef.current) parentRef.current.scrollTop = idx * ROW_HEIGHT;
             }
             typeAheadTimerRef.current = setTimeout(() => {
               typeAheadRef.current = "";
@@ -432,7 +464,13 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           } else {
             selectSingle(nextIdx);
           }
-          virtualizer.scrollToIndex(nextIdx, { align: "auto" });
+          if (parentRef.current) {
+            const el = parentRef.current;
+            const targetTop = nextIdx * ROW_HEIGHT;
+            if (targetTop < el.scrollTop) el.scrollTop = targetTop;
+            else if (targetTop + ROW_HEIGHT > el.scrollTop + el.clientHeight)
+              el.scrollTop = targetTop + ROW_HEIGHT - el.clientHeight;
+          }
           break;
         }
         case "ArrowUp": {
@@ -447,7 +485,13 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           } else {
             selectSingle(nextIdx);
           }
-          virtualizer.scrollToIndex(nextIdx, { align: "auto" });
+          if (parentRef.current) {
+            const el = parentRef.current;
+            const targetTop = nextIdx * ROW_HEIGHT;
+            if (targetTop < el.scrollTop) el.scrollTop = targetTop;
+            else if (targetTop + ROW_HEIGHT > el.scrollTop + el.clientHeight)
+              el.scrollTop = targetTop + ROW_HEIGHT - el.clientHeight;
+          }
           break;
         }
         case "Enter": {
@@ -498,7 +542,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
 
           if (idx >= 0) {
             selectSingle(idx);
-            virtualizer.scrollToOffset(idx * ROW_HEIGHT, { align: "start" });
+            if (parentRef.current) parentRef.current.scrollTop = idx * ROW_HEIGHT;
           }
 
           typeAheadTimerRef.current = setTimeout(() => {
@@ -508,11 +552,11 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
         }
       }
     },
-    [rows, togglePlayPause, handleDoubleClick, virtualizer, typeAheadField, selectSingle, rangeSet, syncSelection],
+    [rows, togglePlayPause, handleDoubleClick, typeAheadField, selectSingle, rangeSet, syncSelection],
   );
 
-  const virtualRows = virtualizer.getVirtualItems();
-  const totalSize = virtualizer.getTotalSize();
+  // Slice the visible window of rows
+  const windowRows = rows.slice(windowStart, windowEnd);
 
   return (
     <div
@@ -558,27 +602,26 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
           ))}
         </thead>
         <tbody>
-          {virtualRows.length > 0 && (
-            <tr>
-              <td style={{ height: `${virtualRows[0].start}px`, padding: 0, border: "none" }} />
-            </tr>
+          {/* Top spacer — pushes rows to correct scroll position */}
+          {topPad > 0 && (
+            <tr><td style={{ height: topPad, padding: 0, border: "none" }} /></tr>
           )}
-          {virtualRows.map((virtualRow) => {
-            const row = rows[virtualRow.index];
+          {windowRows.map((row, i) => {
+            const sortedIndex = windowStart + i;
             const isCurrentTrack = row.original.id === currentTrackId;
             const isFlashing = row.original.id === flashTrackId;
-            const isSelected = selectedIndices.has(virtualRow.index);
+            const isSelected = selectedIndices.has(sortedIndex);
             const noFile = !row.original.filePath;
 
             return (
               <tr
                 key={row.id}
                 draggable
-                onDragStart={(e) => handleDragStart(e, virtualRow.index)}
+                onDragStart={(e) => handleDragStart(e, sortedIndex)}
                 onDragEnd={handleDragEnd}
-                onClick={(e) => handleRowClick(virtualRow.index, e)}
-                onDoubleClick={() => handleDoubleClick(virtualRow.index)}
-                onContextMenu={(e) => handleContextMenu(e, virtualRow.index)}
+                onClick={(e) => handleRowClick(sortedIndex, e)}
+                onDoubleClick={() => handleDoubleClick(sortedIndex)}
+                onContextMenu={(e) => handleContextMenu(e, sortedIndex)}
                 className={`border-b border-n-800/30 cursor-default ${
                   isCurrentTrack
                     ? `bg-accent/25 hover:bg-accent/30 border-l-2 border-l-accent${isFlashing ? " animate-row-flash" : ""}`
@@ -603,10 +646,9 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
               </tr>
             );
           })}
-          {virtualRows.length > 0 && (
-            <tr>
-              <td style={{ height: `${totalSize - virtualRows[virtualRows.length - 1].end}px`, padding: 0, border: "none" }} />
-            </tr>
+          {/* Bottom spacer — correct scrollbar size */}
+          {bottomPad > 0 && (
+            <tr><td style={{ height: bottomPad, padding: 0, border: "none" }} /></tr>
           )}
         </tbody>
       </table>
