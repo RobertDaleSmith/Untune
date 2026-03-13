@@ -89,7 +89,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               src={bgBottom}
               alt=""
               className="absolute inset-[-24px] w-[calc(100%+48px)] h-[calc(100%+48px)] object-cover"
-              style={{ filter: "blur(20px) saturate(2) brightness(0.5)" }}
+              style={{ filter: "var(--mini-bg-filter)" }}
             />
           )}
           {bgTop && (
@@ -97,10 +97,10 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               src={bgTop}
               alt=""
               className="absolute inset-[-24px] w-[calc(100%+48px)] h-[calc(100%+48px)] object-cover transition-opacity duration-500 ease-in-out"
-              style={{ filter: "blur(20px) saturate(2) brightness(0.5)", opacity: bgTopReady ? 1 : 0, willChange: "opacity" }}
+              style={{ filter: "var(--mini-bg-filter)", opacity: bgTopReady ? 1 : 0, willChange: "opacity" }}
             />
           )}
-          <div className="absolute inset-0" style={{ backgroundColor: "rgba(10,10,10,0.35)" }} />
+          <div className="absolute inset-0" style={{ backgroundColor: "var(--mini-bg-overlay)" }} />
         </div>
       )}
 

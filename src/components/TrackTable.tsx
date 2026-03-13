@@ -141,10 +141,14 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [infoTrackIndex, setInfoTrackIndex] = useState<number | null>(null);
   const [artworkSearchTrack, setArtworkSearchTrack] = useState<{ artist: string; album: string } | null>(null);
-  const { currentTrackId, play, togglePlayPause, scrollToNowPlaying } = usePlaybackStore();
+  const currentTrackId = usePlaybackStore((s) => s.currentTrackId);
+  const play = usePlaybackStore((s) => s.play);
+  const togglePlayPause = usePlaybackStore((s) => s.togglePlayPause);
+  const scrollToNowPlaying = usePlaybackStore((s) => s.scrollToNowPlaying);
   const setSelectedTrackIds = useLibraryStore((s) => s.setSelectedTrackIds);
   const setDraggedTrackIds = useLibraryStore((s) => s.setDraggedTrackIds);
-  const { navigateToAlbum, navigateToArtist } = useNavigationStore();
+  const navigateToAlbum = useNavigationStore((s) => s.navigateToAlbum);
+  const navigateToArtist = useNavigationStore((s) => s.navigateToArtist);
   const [flashTrackId, setFlashTrackId] = useState<number | null>(null);
   const [findingTags, setFindingTags] = useState(false);
   const [tagSearchTrack, setTagSearchTrack] = useState<Track | null>(null);
@@ -318,15 +322,14 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     };
   }, [contextMenu]);
 
-  const overscan = 40;
+  const getScrollElement = useCallback(() => parentRef.current, []);
+  const estimateSize = useCallback(() => ROW_HEIGHT, []);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: useCallback(() => ROW_HEIGHT, []),
-    overscan,
-    scrollPaddingStart: ROW_HEIGHT,
-    scrollPaddingEnd: ROW_HEIGHT,
+    getScrollElement,
+    estimateSize,
+    overscan: 100,
   });
 
   // Auto-scroll to the playing track when it changes.
@@ -511,28 +514,6 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const virtualRows = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
 
-  // Detect fast scrolling — use ref to avoid extra re-renders
-  const isScrollingRef = useRef(false);
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      isScrollingRef.current = true;
-      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-      scrollTimerRef.current = setTimeout(() => {
-        isScrollingRef.current = false;
-      }, 150);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    };
-  }, []);
-  // Read during render — no state update needed
-  const isScrolling = isScrollingRef.current;
-
   return (
     <div
       ref={parentRef}
@@ -540,8 +521,8 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <table className="w-full border-collapse text-xs">
-        <thead className="sticky top-0 z-10 bg-n-900/70 backdrop-blur-xl">
+      <table className="w-full border-collapse text-xs" style={{ tableLayout: "fixed" }}>
+        <thead className="sticky top-0 z-10 bg-n-900">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
@@ -588,27 +569,6 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
             const isFlashing = row.original.id === flashTrackId;
             const isSelected = selectedIndices.has(virtualRow.index);
             const noFile = !row.original.filePath;
-
-            // During fast scroll, render lightweight rows (no event handlers, drag, selection logic)
-            if (isScrolling && !isCurrentTrack) {
-              return (
-                <tr
-                  key={row.id}
-                  className="border-b border-n-800/30"
-                  style={{ height: `${ROW_HEIGHT}px` }}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className="px-2 py-0 truncate text-n-300"
-                      style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              );
-            }
 
             return (
               <tr

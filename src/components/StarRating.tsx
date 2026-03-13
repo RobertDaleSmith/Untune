@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 
 interface StarRatingProps {
@@ -6,7 +6,7 @@ interface StarRatingProps {
   rating: number | null;
 }
 
-export function StarRating({ trackId, rating }: StarRatingProps) {
+export const StarRating = memo(function StarRating({ trackId, rating }: StarRatingProps) {
   const [hoverStar, setHoverStar] = useState<number | null>(null);
   const updateTrackRating = useLibraryStore((s) => s.updateTrackRating);
 
@@ -44,4 +44,4 @@ export function StarRating({ trackId, rating }: StarRatingProps) {
       ))}
     </span>
   );
-}
+});
