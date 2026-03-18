@@ -244,6 +244,8 @@ impl PlaybackState {
         let shuffle = guard.as_ref().map(|i| i.shuffle).unwrap_or(false);
         let repeat_mode = guard.as_ref().map(|i| i.repeat_mode).unwrap_or(RepeatMode::Off);
         let shuffle_history = guard.as_ref().map(|i| i.shuffle_history.clone()).unwrap_or_default();
+        let shuffle_forward = guard.as_ref().map(|i| i.shuffle_forward.clone()).unwrap_or_default();
+        let shuffle_upcoming = guard.as_ref().map(|i| i.shuffle_upcoming.clone()).unwrap_or_default();
 
         let source = AudioSource::open(path)?;
 
@@ -254,6 +256,8 @@ impl PlaybackState {
         inner.shuffle = shuffle;
         inner.repeat_mode = repeat_mode;
         inner.shuffle_history = shuffle_history;
+        inner.shuffle_forward = shuffle_forward;
+        inner.shuffle_upcoming = shuffle_upcoming;
         inner.sink.set_volume(volume);
         let analyzed = analyzer::AnalyzedSource::new(source, inner.frequency_data.clone());
         inner.sink.append(analyzed);
@@ -574,10 +578,14 @@ impl PlaybackState {
     /// Peek at upcoming track IDs without consuming them.
     /// Returns (prev_ids, next_ids) — previous from history/sequential, next from forward stack/pre-pick/sequential.
     pub fn peek_upcoming(&self, count: usize) -> (Vec<i64>, Vec<i64>) {
-        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(inner) = guard.as_ref() else {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(inner) = guard.as_mut() else {
             return (vec![], vec![]);
         };
+        // Ensure shuffle upcoming is filled before peeking
+        if inner.shuffle && inner.shuffle_upcoming.len() < count {
+            Self::fill_shuffle_upcoming(inner);
+        }
         if inner.queue.is_empty() {
             return (vec![], vec![]);
         }
@@ -852,6 +860,8 @@ impl PlaybackState {
         let shuffle = guard.as_ref().map(|i| i.shuffle).unwrap_or(false);
         let repeat_mode = guard.as_ref().map(|i| i.repeat_mode).unwrap_or(RepeatMode::Off);
         let shuffle_history = guard.as_ref().map(|i| i.shuffle_history.clone()).unwrap_or_default();
+        let shuffle_forward = guard.as_ref().map(|i| i.shuffle_forward.clone()).unwrap_or_default();
+        let shuffle_upcoming = guard.as_ref().map(|i| i.shuffle_upcoming.clone()).unwrap_or_default();
 
         // Take the old inner (sink + stream) for fade-out
         let old_inner = guard.take();
@@ -866,6 +876,8 @@ impl PlaybackState {
         inner.shuffle = shuffle;
         inner.repeat_mode = repeat_mode;
         inner.shuffle_history = shuffle_history;
+        inner.shuffle_forward = shuffle_forward;
+        inner.shuffle_upcoming = shuffle_upcoming;
         inner.sink.set_volume(0.0); // Start at 0 for fade-in
         let analyzed = analyzer::AnalyzedSource::new(source, inner.frequency_data.clone());
         inner.sink.append(analyzed);

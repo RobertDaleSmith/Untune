@@ -378,7 +378,7 @@ pub fn evaluate(conn: &Connection, rules_json: &str) -> Result<Vec<Track>, Strin
     };
 
     let sql = format!(
-        "SELECT {} FROM tracks WHERE {}{}",
+        "SELECT {} FROM tracks WHERE file_path IS NOT NULL AND ({}){}",
         TRACK_COLUMNS, where_clause, order_limit
     );
 

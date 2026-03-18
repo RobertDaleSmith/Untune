@@ -75,6 +75,15 @@ pub fn get_smart_view_tracks(
 }
 
 #[tauri::command]
+pub fn delete_tracks(
+    db: State<'_, Database>,
+    track_ids: Vec<i64>,
+) -> Result<usize, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    db::delete_tracks(&conn, &track_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn set_track_rating(
     db: State<'_, Database>,
     track_id: i64,

@@ -137,12 +137,20 @@ export async function setTrafficLightsVisible(visible: boolean): Promise<void> {
   return invoke("set_traffic_lights_visible", { visible });
 }
 
+export async function setClickThroughFocus(enabled: boolean): Promise<void> {
+  return invoke("set_click_through_focus", { enabled });
+}
+
 export async function setAppIcon(variant: "light" | "dark"): Promise<void> {
   return invoke("set_app_icon", { variant });
 }
 
 export async function revealInFinder(path: string): Promise<void> {
   return invoke("reveal_in_finder", { path });
+}
+
+export async function deleteTracks(trackIds: number[]): Promise<number> {
+  return invoke<number>("delete_tracks", { trackIds });
 }
 
 export async function setTrackRating(trackId: number, rating: number | null): Promise<void> {

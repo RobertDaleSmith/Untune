@@ -67,11 +67,29 @@ pub fn play_queue(
     if track_ids.is_empty() {
         return Err("Empty queue".to_string());
     }
-    let idx = start_index.min(track_ids.len() - 1);
-    let track_id = track_ids[idx];
+    // Filter to only playable tracks (have file_path), preserving relative order
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let playable: std::collections::HashSet<i64> = {
+        let ids_str: Vec<String> = track_ids.iter().map(|id| id.to_string()).collect();
+        let ph = ids_str.join(",");
+        let sql = format!("SELECT id FROM tracks WHERE id IN ({}) AND file_path IS NOT NULL", ph);
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0)).map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+    drop(conn);
+
+    let filtered: Vec<i64> = track_ids.iter().copied().filter(|id| playable.contains(id)).collect();
+    if filtered.is_empty() {
+        return Err("No playable tracks".to_string());
+    }
+    // Adjust start index — find the requested track in the filtered list
+    let requested_id = track_ids.get(start_index).copied().unwrap_or(filtered[0]);
+    let idx = filtered.iter().position(|&id| id == requested_id).unwrap_or(0);
+    let track_id = filtered[idx];
 
     lookup_and_play(track_id, &db, &playback, false)?;
-    playback.set_queue(track_ids, idx)
+    playback.set_queue(filtered, idx)
 }
 
 #[tauri::command]
@@ -137,16 +155,12 @@ pub fn next_track(
             }
         }
     }
-    loop {
-        match playback.advance_next() {
-            Some((track_id, _idx)) => {
-                match lookup_and_play(track_id, &db, &playback, false) {
-                    Ok(()) => return Ok(Some(track_id)),
-                    Err(_) => continue,
-                }
-            }
-            None => return Ok(None),
+    match playback.advance_next() {
+        Some((track_id, _idx)) => {
+            lookup_and_play(track_id, &db, &playback, false)?;
+            Ok(Some(track_id))
         }
+        None => Ok(None),
     }
 }
 

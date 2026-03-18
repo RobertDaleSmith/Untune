@@ -55,6 +55,34 @@ fn set_traffic_lights_visible(window: tauri::Window, visible: bool) {
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 #[tauri::command]
+fn set_click_through_focus(window: tauri::Window, enabled: bool) {
+    use objc::{msg_send, sel, sel_impl};
+    use cocoa::appkit::NSWindowCollectionBehavior;
+
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        if enabled {
+            // NSWindowStyleMaskNonactivatingPanel = 1 << 7 = 128
+            let mask: u64 = msg_send![ns_window, styleMask];
+            let _: () = msg_send![ns_window, setStyleMask: mask | 128];
+            // Also set collection behavior to allow click-through
+            let _: () = msg_send![ns_window, setCollectionBehavior:
+                NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces |
+                NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
+            ];
+        } else {
+            let mask: u64 = msg_send![ns_window, styleMask];
+            let _: () = msg_send![ns_window, setStyleMask: mask & !128];
+            let _: () = msg_send![ns_window, setCollectionBehavior:
+                NSWindowCollectionBehavior::empty()
+            ];
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
 fn set_app_icon(app: tauri::AppHandle, variant: String) -> Result<(), String> {
     use cocoa::base::{id, nil};
     use objc::{msg_send, sel, sel_impl, class};
@@ -653,6 +681,7 @@ pub fn run() {
             commands::tracks::get_track_count,
             commands::tracks::search_tracks,
             commands::tracks::reveal_in_finder,
+            commands::tracks::delete_tracks,
             commands::tracks::set_track_rating,
             commands::tracks::set_track_source_url,
             commands::tracks::get_smart_view_tracks,
@@ -758,6 +787,7 @@ pub fn run() {
             commands::handoff::pull_handoff_state,
             commands::handoff::dismiss_handoff,
             set_traffic_lights_visible,
+            set_click_through_focus,
             set_app_icon,
         ])
         .run(tauri::generate_context!())

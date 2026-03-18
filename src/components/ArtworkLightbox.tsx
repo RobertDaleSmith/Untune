@@ -62,8 +62,62 @@ export function ArtworkLightbox({
   );
   const [artColor, setArtColor] = useState<[number, number, number]>([255, 255, 255]);
   const videoVisible = usePlaybackStore((s) => s.videoMode);
+  const setVideoMode = usePlaybackStore((s) => s.setVideoMode);
   const videoId = sourceUrl ? extractYouTubeVideoId(sourceUrl) : null;
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [videoAspect, setVideoAspect] = useState(16 / 9);
+  const next = usePlaybackStore((s) => s.next);
+  const prev = usePlaybackStore((s) => s.prev);
+
+  // Two-finger swipe to skip tracks
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+    let accumX = 0;
+    let swiped = false;
+    let resetTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const onWheel = (e: WheelEvent) => {
+      // Only horizontal swipes, ignore pinch (ctrlKey) and small vertical scrolls
+      if (e.ctrlKey || Math.abs(e.deltaY) > Math.abs(e.deltaX)) return;
+      if (Math.abs(e.deltaX) < 2) return;
+
+      accumX += e.deltaX;
+
+      if (!swiped && Math.abs(accumX) > 80) {
+        swiped = true;
+        if (accumX > 0) next();
+        else prev();
+      }
+
+      if (resetTimer) clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        accumX = 0;
+        swiped = false;
+      }, 300);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (resetTimer) clearTimeout(resetTimer);
+    };
+  }, [next, prev]);
+
+  // Fetch video aspect ratio from YouTube oEmbed
+  useEffect(() => {
+    if (!videoId) return;
+    let cancelled = false;
+    fetch(`https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`)
+      .then((r) => r.json())
+      .then((data: { width?: number; height?: number }) => {
+        if (!cancelled && data.width && data.height) {
+          setVideoAspect(data.width / data.height);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [videoId]);
 
   // Progress bar seek state
   const { position: playbackPosition, duration: playbackDuration, seek, isPlaying: playbackIsPlaying } = usePlaybackStore();
@@ -423,19 +477,21 @@ export function ArtworkLightbox({
   if (lyricsVisible) {
     // Two-panel layout: artwork left, lyrics right
     const infoHeight = hasInfo ? 80 : 0;
-    const artSize = Math.min(vpW, vpH) * 0.45;
     const leftPanelWidth = vpW * 0.45;
-    const artLeft = (leftPanelWidth - artSize) / 2;
-    const artTop = (vpH - artSize - infoHeight) / 2;
+    // Always square in lyrics layout — video gets cropped to fill like album art
+    const artW2 = Math.min(vpW, vpH) * 0.45;
+    const artH2 = artW2;
+    const artLeft = (leftPanelWidth - artW2) / 2;
+    const artTop = (vpH - artH2 - infoHeight) / 2;
 
-    const scaleX = originRect.width / artSize;
-    const scaleY = originRect.height / artSize;
+    const scaleX = originRect.width / artW2;
+    const scaleY = originRect.height / artH2;
     const translateX = originRect.left - artLeft;
     const translateY = originRect.top - artTop;
 
     const containerStyle: React.CSSProperties = {
-      width: artSize,
-      height: artSize,
+      width: artW2,
+      height: artH2,
       left: artLeft,
       top: artTop,
       transform:
@@ -506,7 +562,7 @@ export function ArtworkLightbox({
 
         {toggleButtons}
 
-        {/* Left: artwork or video */}
+        {/* Left: artwork or video (square-cropped when lyrics visible) */}
         {videoVisible && videoId ? (
           <div
             className="fixed rounded-lg shadow-2xl overflow-hidden"
@@ -516,7 +572,9 @@ export function ArtworkLightbox({
               videoId={videoId}
               position={playbackPosition}
               isPlaying={playbackIsPlaying}
+              onError={() => setVideoMode(false)}
             />
+            <div className="absolute inset-0 z-10" />
           </div>
         ) : currentSrc ? (
           <img
@@ -556,8 +614,8 @@ export function ArtworkLightbox({
           className="fixed text-center transition-opacity duration-300"
             style={{
               left: artLeft,
-              top: artTop + artSize + 16,
-              width: artSize,
+              top: artTop + artH2 + 16,
+              width: artW2,
               opacity: isOpen && !isLeaving ? 1 : 0,
               zIndex: 2,
             }}
@@ -585,9 +643,9 @@ export function ArtworkLightbox({
           <div
             className="fixed flex gap-1.5 transition-opacity duration-300"
             style={{
-              left: artLeft + artSize / 2,
+              left: artLeft + artW2 / 2,
               transform: "translateX(-50%)",
-              top: artTop + artSize + (hasInfo ? 80 : 16),
+              top: artTop + artH2 + (hasInfo ? 80 : 16),
               opacity: isOpen ? 1 : 0,
               zIndex: 2,
             }}
@@ -611,7 +669,7 @@ export function ArtworkLightbox({
         {isOpen && (
           <AppIcon
             color="white"
-            className="fixed bottom-4 right-4 h-6 w-auto opacity-20 pointer-events-none z-10"
+            className="fixed bottom-4 right-4 h-10 w-auto opacity-20 pointer-events-none z-10"
           />
         )}
 
@@ -644,18 +702,34 @@ export function ArtworkLightbox({
 
   // No lyrics / lyrics hidden: centered artwork layout
   const infoHeight = hasInfo ? 80 : 0;
-  const artSize = Math.min(vpW, vpH) * 0.7;
-  const artLeft = (vpW - artSize) / 2;
-  const artTop = (vpH - artSize - infoHeight) / 2;
+  const useVideoSize = videoVisible && videoId;
+  let artW: number, artH: number;
+  if (useVideoSize) {
+    // Fit video aspect ratio within viewport — fill as much as possible
+    const maxW = vpW * 0.82;
+    const maxH = (vpH - infoHeight) * 0.82;
+    if (maxW / maxH > videoAspect) {
+      artH = maxH;
+      artW = maxH * videoAspect;
+    } else {
+      artW = maxW;
+      artH = maxW / videoAspect;
+    }
+  } else {
+    artW = Math.min(vpW, vpH) * 0.7;
+    artH = artW;
+  }
+  const artLeft = (vpW - artW) / 2;
+  const artTop = (vpH - artH - infoHeight) / 2;
 
-  const scaleX = originRect.width / artSize;
-  const scaleY = originRect.height / artSize;
+  const scaleX = originRect.width / artW;
+  const scaleY = originRect.height / artH;
   const translateX = originRect.left - artLeft;
   const translateY = originRect.top - artTop;
 
   const containerStyle: React.CSSProperties = {
-    width: artSize,
-    height: artSize,
+    width: artW,
+    height: artH,
     left: artLeft,
     top: artTop,
     transform:
@@ -735,7 +809,10 @@ export function ArtworkLightbox({
             videoId={videoId}
             position={playbackPosition}
             isPlaying={playbackIsPlaying}
+            fullRes
+            onError={() => setVideoMode(false)}
           />
+          <div className="absolute inset-0 z-10" />
         </div>
       ) : currentSrc ? (
         <img
@@ -774,8 +851,8 @@ export function ArtworkLightbox({
           className="fixed text-center transition-opacity duration-300"
           style={{
             left: artLeft,
-            top: artTop + artSize + 16,
-            width: artSize,
+            top: artTop + artH + 16,
+            width: artW,
             opacity: isOpen && !isLeaving ? 1 : 0,
             zIndex: 2,
           }}
@@ -802,7 +879,7 @@ export function ArtworkLightbox({
       {isOpen && (
         <AppIcon
           color="white"
-          className="fixed bottom-4 right-4 h-6 w-auto opacity-20 pointer-events-none z-10"
+          className="fixed bottom-4 right-4 h-10 w-auto opacity-20 pointer-events-none z-10"
         />
       )}
 
@@ -811,9 +888,9 @@ export function ArtworkLightbox({
         <div
           className="fixed flex gap-1.5 transition-opacity duration-300"
           style={{
-            left: artLeft + artSize / 2,
+            left: artLeft + artW / 2,
             transform: "translateX(-50%)",
-            top: artTop + artSize + (hasInfo ? 80 : 16),
+            top: artTop + artH + (hasInfo ? 80 : 16),
             opacity: isOpen ? 1 : 0,
             zIndex: 2,
           }}

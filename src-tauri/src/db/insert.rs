@@ -182,6 +182,25 @@ pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<(), rus
     Ok(())
 }
 
+pub fn delete_tracks(conn: &Connection, track_ids: &[i64]) -> Result<usize, rusqlite::Error> {
+    if track_ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders: Vec<String> = track_ids.iter().map(|_| "?".to_string()).collect();
+    let ph = placeholders.join(",");
+    let params: Vec<&dyn rusqlite::types::ToSql> = track_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    // Remove from playlist_tracks first (foreign key)
+    conn.execute(
+        &format!("DELETE FROM playlist_tracks WHERE track_id IN ({})", ph),
+        params.as_slice(),
+    )?;
+    let deleted = conn.execute(
+        &format!("DELETE FROM tracks WHERE id IN ({})", ph),
+        params.as_slice(),
+    )?;
+    Ok(deleted)
+}
+
 pub fn delete_playlist(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", rusqlite::params![id])?;
     conn.execute("DELETE FROM playlists WHERE id = ?", rusqlite::params![id])?;

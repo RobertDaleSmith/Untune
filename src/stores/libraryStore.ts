@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Track } from "../lib/types";
-import { setTrackRating as setTrackRatingCmd, setTrackSourceUrl as setTrackSourceUrlCmd } from "../lib/commands";
+import { setTrackRating as setTrackRatingCmd, setTrackSourceUrl as setTrackSourceUrlCmd, deleteTracks as deleteTracksCmd } from "../lib/commands";
 
 interface LibraryState {
   tracks: Track[];
@@ -34,6 +34,7 @@ interface LibraryState {
   updateTrackRating: (trackId: number, rating: number | null) => void;
   updateTrackSourceUrl: (trackId: number, sourceUrl: string | null) => void;
   recordTrackPlayed: (trackId: number) => void;
+  removeTracks: (trackIds: number[]) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -94,5 +95,13 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       tracks: state.tracks.map(updateTrack),
       searchResults: state.searchResults?.map(updateTrack) ?? null,
     }));
+  },
+  removeTracks: (trackIds) => {
+    const idSet = new Set(trackIds);
+    set((state) => ({
+      tracks: state.tracks.filter((t) => !idSet.has(t.id)),
+      searchResults: state.searchResults?.filter((t) => !idSet.has(t.id)) ?? null,
+    }));
+    deleteTracksCmd(trackIds).catch(console.error);
   },
 }));

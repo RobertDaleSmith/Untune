@@ -146,6 +146,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const scrollToNowPlaying = usePlaybackStore((s) => s.scrollToNowPlaying);
   const setSelectedTrackIds = useLibraryStore((s) => s.setSelectedTrackIds);
   const setDraggedTrackIds = useLibraryStore((s) => s.setDraggedTrackIds);
+  const removeTracks = useLibraryStore((s) => s.removeTracks);
   const navigateToAlbum = useNavigationStore((s) => s.navigateToAlbum);
   const navigateToArtist = useNavigationStore((s) => s.navigateToArtist);
   const [flashTrackId, setFlashTrackId] = useState<number | null>(null);
@@ -856,6 +857,20 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                 )}
               </>
             )}
+            <div className="border-t border-n-700 my-1" />
+            <button
+              className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-n-700"
+              onClick={() => {
+                const ids = selectedIndices.size > 1 && selectedIndices.has(contextMenu.sortedIndex)
+                  ? Array.from(selectedIndices).map((i) => rows[i].original.id)
+                  : [track.id];
+                removeTracks(ids);
+                setSelectedIndices(new Set());
+                setContextMenu(null);
+              }}
+            >
+              Delete {selectedIndices.size > 1 && selectedIndices.has(contextMenu.sortedIndex) ? `${selectedIndices.size} Tracks` : "Track"}
+            </button>
           </div>
         );
       })()}

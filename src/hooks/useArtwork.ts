@@ -1,13 +1,9 @@
 import { useEffect, useState } from "react";
-import { fetchArtwork } from "../lib/artworkQueue";
-
-// Module-level cache shared across all hook instances
-const cache = new Map<string, string | null>();
-const pending = new Map<string, Promise<string | null>>();
+import { fetchArtwork, getCachedArtwork } from "../lib/artworkQueue";
 
 export function useArtwork(artworkHash: string | null): string | null {
   const [url, setUrl] = useState<string | null>(
-    artworkHash ? (cache.get(artworkHash) ?? null) : null,
+    artworkHash ? (getCachedArtwork(artworkHash) ?? null) : null,
   );
 
   useEffect(() => {
@@ -17,28 +13,14 @@ export function useArtwork(artworkHash: string | null): string | null {
     }
 
     // Already cached
-    if (cache.has(artworkHash)) {
-      setUrl(cache.get(artworkHash) ?? null);
+    const cached = getCachedArtwork(artworkHash);
+    if (cached !== undefined) {
+      setUrl(cached);
       return;
     }
 
-    // Deduplicate in-flight requests
-    let p = pending.get(artworkHash);
-    if (!p) {
-      p = fetchArtwork(artworkHash).then((result) => {
-        cache.set(artworkHash, result);
-        pending.delete(artworkHash);
-        return result;
-      }).catch(() => {
-        cache.set(artworkHash, null);
-        pending.delete(artworkHash);
-        return null;
-      });
-      pending.set(artworkHash, p);
-    }
-
     let cancelled = false;
-    p.then((result) => {
+    fetchArtwork(artworkHash).then((result) => {
       if (!cancelled) setUrl(result);
     });
     return () => { cancelled = true; };

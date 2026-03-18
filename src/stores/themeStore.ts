@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
-import { getPreference, setPreference, setTrafficLightsVisible, setAppIcon } from "../lib/commands";
+import { getCurrentWindow, LogicalSize, LogicalPosition, currentMonitor } from "@tauri-apps/api/window";
+import { getPreference, setPreference, setTrafficLightsVisible, setClickThroughFocus, setAppIcon } from "../lib/commands";
 
 type Theme = "light" | "dark" | "system";
 
@@ -17,6 +17,7 @@ interface ThemeState {
   showAlbumAccent: boolean;
   isMiniPlayer: boolean;
   _savedWindowGeometry: SavedGeometry | null;
+  _savedMiniGeometry: { x: number; y: number } | null;
   applyTheme: () => void;
   setTheme: (t: Theme) => void;
   setShowStatusBar: (show: boolean) => void;
@@ -50,6 +51,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   showAlbumAccent: true,
   isMiniPlayer: false,
   _savedWindowGeometry: null,
+  _savedMiniGeometry: null,
 
   applyTheme: () => {
     applyToDOM(get().theme);
@@ -105,11 +107,35 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       });
       await win.setResizable(false);
       await win.setAlwaysOnTop(true);
-      await setTrafficLightsVisible(false);
-      await win.setMinSize(new LogicalSize(350, 48));
-      await win.setSize(new LogicalSize(350, 48));
+      setTrafficLightsVisible(false).catch(() => {});
+      setClickThroughFocus(true).catch(() => {});
+      await win.setMinSize(new LogicalSize(300, 32));
+      await win.setSize(new LogicalSize(300, 32));
+      // Restore mini player position, or center at top of screen
+      const savedMini = get()._savedMiniGeometry;
+      if (savedMini) {
+        await win.setPosition(new LogicalPosition(savedMini.x, savedMini.y));
+      } else {
+        try {
+          const monitor = await currentMonitor();
+          if (monitor) {
+            const screenWidth = monitor.size.width / monitor.scaleFactor;
+            const x = Math.round((screenWidth - 300) / 2);
+            await win.setPosition(new LogicalPosition(x, 0));
+          }
+        } catch { /* ignore */ }
+      }
     } else {
-      await setTrafficLightsVisible(true);
+      // Save mini player position before exiting
+      try {
+        const scaleFactor = await win.scaleFactor();
+        const miniPos = await win.outerPosition();
+        const miniLogical = miniPos.toLogical(scaleFactor);
+        set({ _savedMiniGeometry: { x: miniLogical.x, y: miniLogical.y } });
+      } catch { /* ignore */ }
+
+      setClickThroughFocus(false).catch(() => {});
+      setTrafficLightsVisible(true).catch(() => {});
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
       const saved = get()._savedWindowGeometry;

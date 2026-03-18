@@ -13,16 +13,23 @@ interface YouTubePlayerProps {
   /** Whether local audio is currently playing */
   isPlaying: boolean;
   className?: string;
+  /** Use full resolution instead of scaled 320x180 (for large displays like visualizer) */
+  fullRes?: boolean;
+  /** Called when video fails to load (no internet, blocked, etc.) */
+  onError?: () => void;
 }
 
 let apiLoading = false;
 let apiReady = false;
 const readyCallbacks: (() => void)[] = [];
 
+const errorCallbacks: (() => void)[] = [];
+
 function ensureYTApi(): Promise<void> {
   if (apiReady && window.YT?.Player) return Promise.resolve();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     readyCallbacks.push(resolve);
+    errorCallbacks.push(reject);
     if (apiLoading) return;
     apiLoading = true;
     const prev = window.onYouTubeIframeAPIReady;
@@ -31,19 +38,37 @@ function ensureYTApi(): Promise<void> {
       apiReady = true;
       for (const cb of readyCallbacks) cb();
       readyCallbacks.length = 0;
+      errorCallbacks.length = 0;
     };
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
+    script.onerror = () => {
+      apiLoading = false;
+      for (const cb of errorCallbacks) cb();
+      errorCallbacks.length = 0;
+      readyCallbacks.length = 0;
+    };
+    // Timeout — if API doesn't load in 5s, treat as offline
+    setTimeout(() => {
+      if (!apiReady) {
+        apiLoading = false;
+        for (const cb of errorCallbacks) cb();
+        errorCallbacks.length = 0;
+        readyCallbacks.length = 0;
+      }
+    }, 5000);
     document.head.appendChild(script);
   });
 }
 
-/** Only hard-seek when drift is really egregious (e.g. user seek / track change) */
-const SEEK_THRESHOLD = 5;
-/** How often to check play/pause state (ms) — no position correction */
-const SYNC_INTERVAL = 3000;
+/** Hard-seek when drift exceeds this many seconds */
+const SEEK_THRESHOLD = 1;
+/** How often to check drift and sync (ms) */
+const SYNC_INTERVAL = 1000;
+/** Offset added to local position when syncing to YouTube (compensates for YT startup lag) */
+const YT_OFFSET = 0.8;
 
-export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTubePlayerProps) {
+export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes, onError }: YouTubePlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YT.Player | null>(null);
   const videoIdRef = useRef(videoId);
@@ -73,10 +98,11 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
     if (!player?.getCurrentTime || !readyRef.current) return;
     try {
       // Only hard-seek if way off (5s+)
+      const target = positionRef.current + YT_OFFSET;
       const ytTime = player.getCurrentTime();
-      const drift = Math.abs(ytTime - positionRef.current);
+      const drift = Math.abs(ytTime - target);
       if (drift > SEEK_THRESHOLD) {
-        player.seekTo(positionRef.current, true);
+        player.seekTo(target, true);
       }
       // Keep play/pause in sync
       if (isPlayingRef.current) {
@@ -100,17 +126,15 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
       if (destroyed || !containerRef.current) return;
 
       if (playerRef.current && readyRef.current) {
-        // Reuse existing player — much more reliable than destroy/recreate
         videoIdRef.current = videoId;
         setVisible(false);
         playerRef.current.loadVideoById({
           videoId,
-          startSeconds: Math.floor(positionRef.current),
+          startSeconds: Math.floor(positionRef.current + YT_OFFSET),
         });
         return;
       }
 
-      // First time: create the player
       videoIdRef.current = videoId;
       const el = document.createElement("div");
       containerRef.current.innerHTML = "";
@@ -118,15 +142,15 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
 
       playerRef.current = new YT.Player(el, {
         videoId,
-        width: "100%",
-        height: "100%",
+        width: fullRes ? "100%" : 320,
+        height: fullRes ? "100%" : 180,
         playerVars: {
           autoplay: 1,
           mute: 1,
           rel: 0,
           modestbranding: 1,
           enablejsapi: 1,
-          start: Math.floor(positionRef.current),
+          start: Math.floor(positionRef.current + YT_OFFSET),
           controls: 0,
           showinfo: 0,
           fs: 0,
@@ -137,24 +161,26 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
           onReady: (event: YT.PlayerEvent) => {
             readyRef.current = true;
             event.target.mute();
-            event.target.seekTo(positionRef.current, true);
+            event.target.seekTo(positionRef.current + YT_OFFSET, true);
             if (isPlayingRef.current) {
               event.target.playVideo();
             }
           },
           onStateChange: (event: YT.OnStateChangeEvent) => {
-            // Reveal once actually playing (hides initial title overlay)
             if (event.data === YT.PlayerState.PLAYING) {
               setVisible(true);
+              const target = positionRef.current + YT_OFFSET;
+              const drift = Math.abs(event.target.getCurrentTime() - target);
+              if (drift > 0.5) {
+                event.target.seekTo(target, true);
+              }
             }
-            // Auto-recover from stuck states
             if (
               isPlayingRef.current &&
               (event.data === YT.PlayerState.UNSTARTED ||
                event.data === YT.PlayerState.CUED ||
                event.data === YT.PlayerState.PAUSED)
             ) {
-              // Small delay to let YouTube finish its internal state transition
               setTimeout(() => {
                 if (isPlayingRef.current && playerRef.current) {
                   tryPlay(playerRef.current);
@@ -162,8 +188,14 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
               }, 300);
             }
           },
+          onError: () => {
+            onError?.();
+          },
         },
       });
+    }).catch(() => {
+      // YT API failed to load (no internet)
+      onError?.();
     });
 
     return () => {
@@ -196,7 +228,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
     if (delta > SEEK_THRESHOLD) {
       const player = playerRef.current;
       if (player?.seekTo) {
-        try { player.seekTo(position, true); } catch { /* ignore */ }
+        try { player.seekTo(position + YT_OFFSET, true); } catch { /* ignore */ }
       }
     }
   }, [position]);
@@ -214,18 +246,48 @@ export function YouTubePlayer({ videoId, position, isPlaying, className }: YouTu
     } catch { /* ignore */ }
   }, [isPlaying, tryPlay]);
 
+  // Render iframe at fixed 320x180 and CSS-scale to fill container
+  // This keeps YT branding proportional at any display size
+  const outerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      // Scale to cover (like object-fit: cover)
+      setScale(Math.max(w / 320, h / 180));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className={className} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", background: "#000" }}>
-      {/* Scale iframe wider (16:9 → square) so video fills height and sides clip */}
+    <div ref={outerRef} className={className} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", background: "#000" }}>
+      {/* CSS override to force YT iframe to fill container */}
+      <style>{`
+        .yt-full-res iframe { width: 100% !important; height: 100% !important; }
+      `}</style>
       <div
         ref={containerRef}
-        style={{
+        className={fullRes ? "yt-full-res" : undefined}
+        style={fullRes ? {
           position: "absolute",
-          top: 0,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "177.78%",  /* 16/9 of the square height */
+          inset: 0,
+          width: "100%",
           height: "100%",
+        } : {
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: 320,
+          height: 180,
+          transform: `translate(-50%, -50%) scale(${scale})`,
+          transformOrigin: "center center",
         }}
       />
       {/* Black cover hides white iframe flash until video is actually playing */}

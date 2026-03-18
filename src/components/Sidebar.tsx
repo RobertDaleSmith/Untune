@@ -791,6 +791,7 @@ export function Sidebar() {
                 videoId={videoId}
                 position={playbackPosition}
                 isPlaying={playbackIsPlaying}
+                onError={() => setShowVideo(false)}
               />
               {/* Transparent overlay to capture clicks above the iframe */}
               <div

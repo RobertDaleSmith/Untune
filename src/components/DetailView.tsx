@@ -73,6 +73,19 @@ export function DetailView({
   const [editorOpen, setEditorOpen] = useState(false);
   const navigateTo = useNavigationStore((s) => s.navigateTo);
   const detailVersion = useNavigationStore((s) => s.detailVersion);
+  const libraryTracks = useLibraryStore((s) => s.tracks);
+
+  // Sync rating/metadata changes from the library store into local tracks
+  useEffect(() => {
+    if (tracks.length === 0) return;
+    const libMap = new Map(libraryTracks.map((t) => [t.id, t]));
+    setTracks((prev) =>
+      prev.map((t) => {
+        const lib = libMap.get(t.id);
+        return lib && (lib.rating !== t.rating || lib.sourceUrl !== t.sourceUrl) ? { ...t, rating: lib.rating, sourceUrl: lib.sourceUrl } : t;
+      }),
+    );
+  }, [libraryTracks]);
   const browserVisible = useColumnBrowserStore((s) => s.visible);
   const selectedGenre = useColumnBrowserStore((s) => s.selectedGenre);
   const selectedArtist = useColumnBrowserStore((s) => s.selectedArtist);

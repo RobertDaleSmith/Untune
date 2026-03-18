@@ -7,7 +7,8 @@ import { useThemeStore } from "./stores/themeStore";
 import { useColumnBrowserStore, type BrowserColumn } from "./stores/columnBrowserStore";
 import { useActivityStore } from "./stores/activityStore";
 import { save, open } from "@tauri-apps/plugin-dialog";
-import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getArtworkDataUrl, getUpcomingTracks, createPlaylist, createPlaylistFolder, exportLibrary, exportAiTags, importAiTags, exportPlaylistM3u } from "./lib/commands";
+import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getUpcomingTracks, createPlaylist, createPlaylistFolder, exportLibrary, exportAiTags, importAiTags, exportPlaylistM3u } from "./lib/commands";
+import { fetchArtwork } from "./lib/artworkQueue";
 import { ImportProgress } from "./components/ImportProgress";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
@@ -477,7 +478,7 @@ function App() {
     ).catch(() => {});
   }, [currentTrackId, isPlaying, tracks]);
 
-  // Load artwork globally when current track changes
+  // Load artwork globally when current track changes — uses shared cache
   useEffect(() => {
     const track = currentTrackId != null ? tracks.find((t) => t.id === currentTrackId) : null;
     if (!track?.artworkHash) {
@@ -485,10 +486,8 @@ function App() {
       return;
     }
     let cancelled = false;
-    getArtworkDataUrl(track.artworkHash).then((url) => {
-      if (!cancelled) usePlaybackStore.setState({ currentArtworkUrl: url });
-    }).catch(() => {
-      if (!cancelled) usePlaybackStore.setState({ currentArtworkUrl: null });
+    fetchArtwork(track.artworkHash).then((url) => {
+      if (!cancelled) usePlaybackStore.setState({ currentArtworkUrl: url ?? null });
     });
     return () => { cancelled = true; };
   }, [currentTrackId, tracks]);
@@ -504,8 +503,7 @@ function App() {
       for (const id of allIds) {
         const t = trackMap.get(id);
         if (t?.artworkHash) {
-          // Fire-and-forget: this populates the shared artwork cache
-          getArtworkDataUrl(t.artworkHash).catch(() => {});
+          fetchArtwork(t.artworkHash); // fire-and-forget: populates shared cache
         }
       }
     }).catch(() => {});
@@ -634,7 +632,10 @@ function App() {
     }
     setBgTopReady(false);
     setBgTop(currentArtworkUrl);
-    requestAnimationFrame(() => setBgTopReady(true));
+    // Double rAF ensures the browser has painted opacity:0 before transitioning to 1
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setBgTopReady(true));
+    });
     const t = setTimeout(() => {
       setBgBottom(currentArtworkUrl);
       setBgTopReady(false);
@@ -722,14 +723,14 @@ function App() {
     >
       {/* Blurred artwork background */}
       {showAlbumAccent && (
-        <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute inset-0 overflow-hidden" aria-hidden="true" style={{ transform: "translateZ(0)" }}>
           {/* Bottom layer: previous/stable artwork — blur baked per-image for GPU compositing */}
           {bgBottom && (
             <img
               src={bgBottom}
               alt=""
               className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover"
-              style={{ filter: "var(--accent-filter)", willChange: "auto" }}
+              style={{ filter: "var(--accent-filter)" }}
             />
           )}
           {/* Top layer: incoming artwork, fades in over bottom */}
@@ -738,7 +739,7 @@ function App() {
               src={bgTop}
               alt=""
               className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover transition-opacity duration-500 ease-in-out"
-              style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0, willChange: "opacity" }}
+              style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0 }}
             />
           )}
           {/* Theme-adaptive overlay for readability */}
