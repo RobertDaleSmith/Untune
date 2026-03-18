@@ -5,3 +5,5 @@ target/
 *.swp
 *.swo
 src-tauri/bin/yt-dlp
+*.xcuserstate
+xcuserdata/
