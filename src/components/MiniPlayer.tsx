@@ -151,10 +151,10 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         </div>
       )}
 
-      {/* Top bar — fixed height, above progress bar so buttons are clickable */}
-      <div className="flex items-center relative z-30" style={{ height: COLLAPSED_H, minHeight: COLLAPSED_H }}>
+      {/* Top bar — fixed height */}
+      <div className="flex items-center relative z-10" style={{ height: COLLAPSED_H, minHeight: COLLAPSED_H }}>
         {/* Transport controls */}
-        <div className="flex items-center gap-1 pl-2 flex-shrink-0">
+        <div className="flex items-center gap-1 pl-2 flex-shrink-0 relative z-30">
           {/* Play/Pause — Option: dice (play random) */}
           <button
             onClick={(e) => {
@@ -256,6 +256,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         <button
           onClick={(e) => { e.stopPropagation(); toggleExpanded(); }}
           onMouseDown={(e) => e.stopPropagation()}
+          style={{ position: "relative", zIndex: 30 }}
           className={`transition-colors flex-shrink-0 px-2 py-1 ${expanded ? "text-accent" : "text-n-500 hover:text-n-200"}`}
           title={expanded ? "Hide Queue" : "Show Queue"}
         >
@@ -308,8 +309,8 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         ref={progressRef}
         onClick={handleProgressClick}
         onMouseDown={(e) => e.stopPropagation()}
-        className="absolute left-0 right-0 z-20 cursor-pointer group flex flex-col justify-end"
-        style={{ top: COLLAPSED_H - 11, height: 12 }}
+        className="absolute left-0 right-0 z-20 cursor-pointer group flex flex-col justify-center"
+        style={{ top: COLLAPSED_H - 6, height: 14 }}
       >
         <div className="h-0.5 group-hover:h-1 transition-all duration-150 bg-n-800 relative overflow-visible">
           <div
