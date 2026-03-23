@@ -50,6 +50,16 @@ function App() {
   const showStatusBar = useThemeStore((s) => s.showStatusBar);
   const showAlbumAccent = useThemeStore((s) => s.showAlbumAccent);
   const isMiniPlayer = useThemeStore((s) => s.isMiniPlayer);
+  const miniPlayerMode = useThemeStore((s) => s.miniPlayerMode);
+  const isNotchMode = isMiniPlayer && miniPlayerMode === "notch";
+
+  // Transparent document background for notch mode
+  useEffect(() => {
+    document.documentElement.style.background = isNotchMode ? "transparent" : "";
+    document.body.style.background = isNotchMode ? "transparent" : "";
+  }, [isNotchMode]);
+
+
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAddFromUrl, setShowAddFromUrl] = useState(false);
@@ -323,8 +333,25 @@ function App() {
         useNavigationStore.getState().requestSidebarRefresh();
         window.dispatchEvent(new CustomEvent("untune-open-smart-editor"));
       }),
-      listen("toggle-mini-player", () => {
-        useThemeStore.getState().toggleMiniPlayer();
+      listen("toggle-mini-player", async () => {
+        const store = useThemeStore.getState();
+        if (store.isMiniPlayer && store.miniPlayerMode === "floating") {
+          await store.toggleMiniPlayer(); // exit
+        } else {
+          if (store.isMiniPlayer) await store.toggleMiniPlayer(); // exit notch first
+          store.setMiniPlayerMode("floating");
+          await useThemeStore.getState().toggleMiniPlayer(); // enter floating
+        }
+      }),
+      listen("toggle-mini-player-island", async () => {
+        const store = useThemeStore.getState();
+        if (store.isMiniPlayer && store.miniPlayerMode === "notch") {
+          await store.toggleMiniPlayer(); // exit
+        } else {
+          if (store.isMiniPlayer) await store.toggleMiniPlayer(); // exit floating first
+          store.setMiniPlayerMode("notch");
+          await useThemeStore.getState().toggleMiniPlayer(); // enter notch
+        }
       }),
       listen("menu-new-playlist-folder", async () => {
         try {

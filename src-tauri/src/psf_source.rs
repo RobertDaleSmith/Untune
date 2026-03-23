@@ -113,7 +113,9 @@ static PSX_INIT: std::sync::Once = std::sync::Once::new();
 
 fn ensure_psx_init() {
     PSX_INIT.call_once(|| unsafe {
-        bios_set_image(HEBIOS.as_ptr(), HEBIOS.len() as u32);
+        if !HEBIOS.is_empty() {
+            bios_set_image(HEBIOS.as_ptr(), HEBIOS.len() as u32);
+        }
         psx_init();
     });
 }

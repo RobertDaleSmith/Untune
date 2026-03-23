@@ -18,8 +18,8 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "decorations": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

@@ -62,21 +62,273 @@ fn set_click_through_focus(window: tauri::Window, enabled: bool) {
     let ns_window = window.ns_window().unwrap() as cocoa::base::id;
     unsafe {
         if enabled {
-            // NSWindowStyleMaskNonactivatingPanel = 1 << 7 = 128
-            let mask: u64 = msg_send![ns_window, styleMask];
-            let _: () = msg_send![ns_window, setStyleMask: mask | 128];
+            // Save original mask if not already saved
+            if SAVED_STYLE_MASK.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+                let mask: u64 = msg_send![ns_window, styleMask];
+                SAVED_STYLE_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
+            }
+            // Borderless + NonactivatingPanel + FullSizeContentView = sharp corners
+            let _: () = msg_send![ns_window, setStyleMask: (128_u64 | 32768_u64)];
             // Also set collection behavior to allow click-through
             let _: () = msg_send![ns_window, setCollectionBehavior:
                 NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces |
                 NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
             ];
         } else {
-            let mask: u64 = msg_send![ns_window, styleMask];
-            let _: () = msg_send![ns_window, setStyleMask: mask & !128];
+            // Restore original style mask (rounded corners for full mode)
+            let orig_mask = SAVED_STYLE_MASK.load(std::sync::atomic::Ordering::Relaxed);
+            if orig_mask != 0 {
+                let _: () = msg_send![ns_window, setStyleMask: orig_mask];
+            }
             let _: () = msg_send![ns_window, setCollectionBehavior:
                 NSWindowCollectionBehavior::empty()
             ];
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
+fn set_window_level(window: tauri::Window, level: i32) {
+    use objc::{msg_send, sel, sel_impl};
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        let _: () = msg_send![ns_window, setLevel: level];
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
+fn set_window_transparent(window: tauri::Window, transparent: bool) {
+    use cocoa::base::nil;
+    use objc::{msg_send, sel, sel_impl, class};
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        if transparent {
+            let clear: cocoa::base::id = msg_send![class!(NSColor), clearColor];
+            let _: () = msg_send![ns_window, setBackgroundColor: clear];
+            let _: () = msg_send![ns_window, setOpaque: false];
+            let _: () = msg_send![ns_window, setHasShadow: false];
+        } else {
+            let bg: cocoa::base::id = msg_send![class!(NSColor), windowBackgroundColor];
+            let _: () = msg_send![ns_window, setBackgroundColor: bg];
+            let _: () = msg_send![ns_window, setOpaque: true];
+            let _: () = msg_send![ns_window, setHasShadow: true];
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+static SAVED_STYLE_MASK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn set_webview_transparent(view: cocoa::base::id, transparent: bool) {
+    unsafe {
+        use objc::{msg_send, sel, sel_impl, class};
+        let wk_class = class!(WKWebView);
+        let is_wk: bool = msg_send![view, isKindOfClass: wk_class];
+        if is_wk {
+            let sel = sel!(_setDrawsBackground:);
+            let responds: bool = msg_send![view, respondsToSelector: sel];
+            if responds {
+                let _: () = msg_send![view, _setDrawsBackground: !transparent];
+            }
+            return;
+        }
+        let subviews: cocoa::base::id = msg_send![view, subviews];
+        let count: usize = msg_send![subviews, count];
+        for i in 0..count {
+            let subview: cocoa::base::id = msg_send![subviews, objectAtIndex: i];
+            set_webview_transparent(subview, transparent);
+        }
+    }
+}
+
+#[tauri::command]
+fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) {
+    use objc::{msg_send, sel, sel_impl, class};
+    use cocoa::appkit::NSWindowCollectionBehavior;
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        if enable {
+            // Save original style mask
+            let orig_mask: u64 = msg_send![ns_window, styleMask];
+            SAVED_STYLE_MASK.store(orig_mask, std::sync::atomic::Ordering::Relaxed);
+
+            // Transparent background
+            let clear: cocoa::base::id = msg_send![class!(NSColor), clearColor];
+            let _: () = msg_send![ns_window, setBackgroundColor: clear];
+            let _: () = msg_send![ns_window, setOpaque: false];
+            let _: () = msg_send![ns_window, setHasShadow: false];
+
+            // Borderless + NonactivatingPanel + FullSizeContentView
+            // Borderless bypasses constrainFrameRect which otherwise clamps below menu bar
+            let _: () = msg_send![ns_window, setStyleMask: (128_u64 | 32768_u64)];
+            let _: () = msg_send![ns_window, setMovable: false];
+            let _: () = msg_send![ns_window, setAcceptsMouseMovedEvents: true];
+
+            // Swizzle acceptsFirstMouse: on all views to return YES
+            use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Class, Sel};
+            extern "C" fn accepts_first_mouse(_this: &objc::runtime::Object, _cmd: Sel, _event: cocoa::base::id) -> bool {
+                true
+            }
+            fn swizzle_accepts_first_mouse(view: cocoa::base::id) {
+                unsafe {
+                    use objc::{msg_send, sel, sel_impl};
+                    use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Class};
+                    let cls: *const Class = msg_send![view, class];
+                    let sel = sel!(acceptsFirstMouse:);
+                    let imp: extern "C" fn() = std::mem::transmute(
+                        accepts_first_mouse as extern "C" fn(&objc::runtime::Object, objc::runtime::Sel, cocoa::base::id) -> bool
+                    );
+                    let added = class_addMethod(
+                        cls as *mut Class,
+                        sel,
+                        imp,
+                        b"B@:@\0".as_ptr() as *const _,
+                    );
+                    if !added {
+                        // Method already exists — replace its implementation
+                        let method = class_getInstanceMethod(cls, sel);
+                        if !method.is_null() {
+                            method_setImplementation(method as *mut _, imp);
+                        }
+                    }
+                    let subviews: cocoa::base::id = msg_send![view, subviews];
+                    let count: usize = msg_send![subviews, count];
+                    for i in 0..count {
+                        let subview: cocoa::base::id = msg_send![subviews, objectAtIndex: i];
+                        swizzle_accepts_first_mouse(subview);
+                    }
+                }
+            }
+            let content_view: cocoa::base::id = msg_send![ns_window, contentView];
+            if content_view != cocoa::base::nil {
+                swizzle_accepts_first_mouse(content_view);
+            }
+
+            // Global monitor: emit event when user clicks outside our window
+            {
+                use std::sync::atomic::AtomicBool;
+                static CLICK_MONITOR_INSTALLED: AtomicBool = AtomicBool::new(false);
+                if !CLICK_MONITOR_INSTALLED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    let win_ptr = ns_window as usize;
+                    let app_handle = window.app_handle().clone();
+                    let block = block::ConcreteBlock::new(move |_event: cocoa::base::id| {
+                        unsafe {
+                            let win = win_ptr as cocoa::base::id;
+                            let mouse_loc: cocoa::foundation::NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                            let frame: cocoa::foundation::NSRect = msg_send![win, frame];
+                            let inside = mouse_loc.x >= frame.origin.x
+                                && mouse_loc.x <= frame.origin.x + frame.size.width
+                                && mouse_loc.y >= frame.origin.y
+                                && mouse_loc.y <= frame.origin.y + frame.size.height;
+                            if !inside {
+                                let _ = app_handle.emit("notch-click-outside", ());
+                            } else {
+                                // Focus the window so hotkeys work
+                                let app: cocoa::base::id = msg_send![class!(NSApplication), sharedApplication];
+                                let _: () = msg_send![app, activateIgnoringOtherApps: true];
+                                let _: () = msg_send![win, makeKeyAndOrderFront: cocoa::base::nil];
+                            }
+                        }
+                    });
+                    let block = block.copy();
+                    let mask: u64 = 1 << 1; // NSEventMaskLeftMouseDown
+                    let _: cocoa::base::id = msg_send![
+                        class!(NSEvent),
+                        addGlobalMonitorForEventsMatchingMask: mask
+                        handler: &*block
+                    ];
+                    std::mem::forget(block);
+                }
+            }
+
+            // Sync WindowServer prevents-activation flag after style mask change
+            let prevents_sel = sel!(_setPreventsActivation:);
+            let responds: bool = msg_send![ns_window, respondsToSelector: prevents_sel];
+            if responds {
+                let _: () = msg_send![ns_window, _setPreventsActivation: true];
+            }
+
+            // Make WKWebView background transparent for notch mode
+            let content_view: cocoa::base::id = msg_send![ns_window, contentView];
+            if content_view != cocoa::base::nil {
+                set_webview_transparent(content_view, true);
+            }
+
+            // Collection behaviors: join all spaces, stationary, ignore cycle
+            let _: () = msg_send![ns_window, setCollectionBehavior:
+                NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces |
+                NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary |
+                NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle
+            ];
+
+            // Window level above menu bar: NSStatusWindowLevel + 1 = 26
+            let _: () = msg_send![ns_window, setLevel: 33_i32];
+
+            // Position: centered at absolute top of the screen
+            let screen: cocoa::base::id = msg_send![ns_window, screen];
+            if screen != cocoa::base::nil {
+                let screen_frame: cocoa::foundation::NSRect = msg_send![screen, frame];
+                let macos_x = screen_frame.origin.x + (screen_frame.size.width - width) / 2.0;
+                let macos_y = screen_frame.origin.y + screen_frame.size.height - height;
+                let new_frame = cocoa::foundation::NSRect::new(
+                    cocoa::foundation::NSPoint::new(macos_x, macos_y),
+                    cocoa::foundation::NSSize::new(width, height),
+                );
+                let _: () = msg_send![ns_window, setFrame: new_frame display: true];
+            }
+        } else {
+            // Restore normal window
+            let bg: cocoa::base::id = msg_send![class!(NSColor), windowBackgroundColor];
+            let _: () = msg_send![ns_window, setBackgroundColor: bg];
+            let _: () = msg_send![ns_window, setOpaque: true];
+            let _: () = msg_send![ns_window, setHasShadow: true];
+            // Restore original style mask (gives back rounded corners for full mode)
+            let orig_mask = SAVED_STYLE_MASK.load(std::sync::atomic::Ordering::Relaxed);
+            if orig_mask != 0 {
+                let _: () = msg_send![ns_window, setStyleMask: orig_mask];
+            }
+            let _: () = msg_send![ns_window, setMovable: true];
+            let _: () = msg_send![ns_window, setCollectionBehavior:
+                NSWindowCollectionBehavior::empty()
+            ];
+            let _: () = msg_send![ns_window, setLevel: 0_i32]; // NSNormalWindowLevel
+
+            // Restore webview background
+            let content_view: cocoa::base::id = msg_send![ns_window, contentView];
+            if content_view != cocoa::base::nil {
+                set_webview_transparent(content_view, false);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
+fn get_notch_info(window: tauri::Window) -> (f64, f64) {
+    use objc::{msg_send, sel, sel_impl};
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        let screen: cocoa::base::id = msg_send![ns_window, screen];
+        if screen == cocoa::base::nil { return (0.0, 0.0); }
+        #[repr(C)]
+        struct NSEdgeInsets { top: f64, left: f64, bottom: f64, right: f64 }
+        let insets: NSEdgeInsets = msg_send![screen, safeAreaInsets];
+        let height = insets.top;
+        if height <= 0.0 { return (0.0, 0.0); }
+        // Notch width = screen width - left safe area - right safe area
+        let screen_frame: cocoa::foundation::NSRect = msg_send![screen, frame];
+        let aux_left: cocoa::foundation::NSRect = msg_send![screen, auxiliaryTopLeftArea];
+        let aux_right: cocoa::foundation::NSRect = msg_send![screen, auxiliaryTopRightArea];
+        let left_edge = aux_left.origin.x + aux_left.size.width;
+        let right_edge = aux_right.origin.x;
+        let width = if right_edge > left_edge { right_edge - left_edge } else { screen_frame.size.width * 0.15 };
+        (height, width)
     }
 }
 
@@ -419,6 +671,9 @@ pub fn run() {
                         .item(&MenuItemBuilder::with_id("toggle-mini-player", "Mini Player")
                             .accelerator("CmdOrCtrl+Shift+M")
                             .build(handle)?)
+                        .item(&MenuItemBuilder::with_id("toggle-mini-player-island", "Notch Player (beta)")
+                            .accelerator("CmdOrCtrl+Shift+N")
+                            .build(handle)?)
                         .build()?,
                     &SubmenuBuilder::new(handle, "Controls")
                         .item(&MenuItemBuilder::with_id("pb-toggle", "Play/Pause")
@@ -586,6 +841,7 @@ pub fn run() {
                 "add-folder" => { let _ = app.emit("menu-add-folder", ()); }
                 "add-from-url" => { let _ = app.emit("menu-add-from-url", ()); }
                 "toggle-mini-player" => { let _ = app.emit("toggle-mini-player", ()); }
+                "toggle-mini-player-island" => { let _ = app.emit("toggle-mini-player-island", ()); }
                 "pb-toggle" => { let _ = app.emit("media-toggle", ()); }
                 "pb-goto" => { let _ = app.emit("media-goto-current", ()); }
                 "pb-stop" => { let _ = app.emit("media-stop", ()); }
@@ -788,6 +1044,10 @@ pub fn run() {
             commands::handoff::dismiss_handoff,
             set_traffic_lights_visible,
             set_click_through_focus,
+            set_window_level,
+            set_window_transparent,
+            set_notch_mode,
+            get_notch_info,
             set_app_icon,
         ])
         .run(tauri::generate_context!())

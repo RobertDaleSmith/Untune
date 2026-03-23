@@ -141,6 +141,22 @@ export async function setClickThroughFocus(enabled: boolean): Promise<void> {
   return invoke("set_click_through_focus", { enabled });
 }
 
+export async function setWindowLevel(level: number): Promise<void> {
+  return invoke("set_window_level", { level });
+}
+
+export async function setWindowTransparent(transparent: boolean): Promise<void> {
+  return invoke("set_window_transparent", { transparent });
+}
+
+export async function setNotchMode(enable: boolean, width: number, height: number): Promise<void> {
+  return invoke("set_notch_mode", { enable, width, height });
+}
+
+export async function getNotchInfo(): Promise<[number, number]> {
+  return invoke<[number, number]>("get_notch_info", {});
+}
+
 export async function setAppIcon(variant: "light" | "dark"): Promise<void> {
   return invoke("set_app_icon", { variant });
 }

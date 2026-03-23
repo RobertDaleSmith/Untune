@@ -398,7 +398,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
               title="Previous"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 8L15 2v12zM1 8l7-6v12z" />
+                <path d="M1 2v12h2V2H1zM5 8l9-6v12z" />
               </svg>
             </button>
             <button
@@ -422,7 +422,7 @@ export function PlaybackBar({ tracks }: PlaybackBarProps) {
               title="Next"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 8L1 2v12zM15 8l-7-6v12z" />
+                <path d="M1 2l9 6-9 6V2zM13 2v12h2V2h-2z" />
               </svg>
             </button>
             <button
