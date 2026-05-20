@@ -588,6 +588,7 @@ pub fn get_playlist_persistent_id(
     .optional()
 }
 
+#[allow(dead_code)]
 pub fn get_playlist_id_by_persistent_id(
     conn: &Connection,
     persistent_id: &str,

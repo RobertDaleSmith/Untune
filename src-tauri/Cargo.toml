@@ -12,6 +12,12 @@ rust-version = "1.77.2"
 name = "untune_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[lints.rust]
+# The objc/cocoa msg_send!/class!/sel_impl! macros expand to code gated on
+# `#[cfg(feature = "cargo-clippy")]`, a feature this crate doesn't define, so
+# check-cfg flags every macro expansion. Declare it as a known cfg to silence it.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 cc = "1"

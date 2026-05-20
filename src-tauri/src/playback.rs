@@ -698,6 +698,31 @@ impl PlaybackState {
         Ok(())
     }
 
+    /// Detect that the current track ended naturally (sink drained, not paused, no
+    /// gapless or crossfade transition pending) and auto-advance is warranted.
+    /// Returns true only when the backend should call `advance_next` + play to
+    /// continue playback — used by a Rust-side watchdog thread so playback keeps
+    /// going when the webview is throttled (window minimized/in background).
+    pub fn check_auto_advance(&self) -> bool {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = match guard.as_ref() {
+            Some(i) => i,
+            None => return false,
+        };
+        if inner.current_track_id.is_none() { return false; }
+        if inner.queue.is_empty() { return false; }
+        if inner.sink.is_paused() { return false; }
+        if !inner.sink.empty() { return false; }
+        if inner.next_track_appended { return false; }
+        // Require that the track actually started playing — guards against the
+        // cold-start "session restored, no audio loaded" state where sink is
+        // empty but we don't want to auto-skip.
+        if inner.play_started_at.is_none() && inner.accumulated_position == 0.0 {
+            return false;
+        }
+        true
+    }
+
     /// Pre-buffer the next track by appending it to the sink.
     /// Returns the track ID of the appended track, or None if nothing to append.
     pub fn pre_buffer_next(&self, file_path: &str, track_id: i64, duration: Option<f64>, queue_index: usize) -> Result<bool, String> {

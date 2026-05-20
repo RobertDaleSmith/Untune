@@ -337,12 +337,14 @@ pub struct PsfSource {
     buffer_offset: usize,
     sample_rate: u32,
     total_duration: Duration,
+    #[allow(dead_code)]
     fade_duration: Duration,
     samples_rendered: u64,
     total_samples: u64,
     fade_start_sample: u64,
     /// Keep the file path for seek-by-reload
     path: String,
+    #[allow(dead_code)]
     version: u8,
 }
 

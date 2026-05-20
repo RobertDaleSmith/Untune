@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useLibraryStore } from "./libraryStore";
 import {
   getPlaybackInfo,
+  getPlaylistTracks,
   pausePlayback,
   resumePlayback,
   nextTrack,
@@ -256,15 +257,29 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       const pos = get().position;
       if (trackId != null) {
         set({ _restoredFromSession: false });
-        // Build full queue from library so next/prev work after resume
-        const allTracks = useLibraryStore.getState().tracks;
-        const trackIds = allTracks.map((t) => t.id);
+        // Build queue from the saved source (playlist/view)
+        let trackIds: number[];
+        const source = get().queueSource;
+        if (source && source.startsWith("playlist:")) {
+          try {
+            const plId = parseInt(source.replace("playlist:", ""), 10);
+            const plTracks = await getPlaylistTracks(plId);
+            trackIds = plTracks.map((t) => t.id);
+          } catch {
+            trackIds = useLibraryStore.getState().tracks.map((t) => t.id);
+          }
+        } else {
+          trackIds = useLibraryStore.getState().tracks.map((t) => t.id);
+        }
         const idx = trackIds.indexOf(trackId);
         if (idx >= 0 && trackIds.length > 1) {
           await playQueue(trackIds, idx);
         } else {
           await playQueue([trackId], 0);
         }
+        // Restore shuffle/repeat to backend (queue now exists)
+        await setShuffleCmd(get().shuffle).catch(() => {});
+        await setRepeatModeCmd(get().repeatMode).catch(() => {});
         if (pos > 0) await seekPlayback(pos);
         set({ isPlaying: true });
         get().startPolling();
@@ -328,6 +343,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     try {
       const newVal = await toggleShuffleCmd();
       set({ shuffle: newVal });
+      setPreference("session.shuffle", String(newVal)).catch(() => {});
       const src = get().queueSource;
       if (src) {
         saveViewSettings(src, newVal, get().repeatMode).catch(() => {});
@@ -341,6 +357,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     try {
       const newMode = await cycleRepeatCmd();
       set({ repeatMode: newMode });
+      setPreference("session.repeatMode", newMode).catch(() => {});
       const src = get().queueSource;
       if (src) {
         saveViewSettings(src, get().shuffle, newMode).catch(() => {});
@@ -352,7 +369,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   poll: async () => {
     try {
-      const prev = get();
       const info = await getPlaybackInfo();
       // If polling was stopped while this poll was in-flight, discard stale result
       if (get()._pollTimer === null) return;
@@ -395,27 +411,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       getSleepTimerRemaining()
         .then((remaining) => set({ sleepTimerRemaining: remaining }))
         .catch(() => {});
-      // Track ended naturally: was playing, now stopped (not paused) but track still set
-      if (prev.isPlaying && !info.isPlaying && !info.isPaused && info.trackId != null) {
-        const trackId = await nextTrack();
-        if (trackId != null) {
-          set({ currentTrackId: trackId, position: 0, isPlaying: true });
-          // Radio auto-queue: when radio is on and queue is getting low, add more similar tracks
-          getRadioState().then((radio) => {
-            if (radio.enabled && radio.seedTrackId) {
-              getUpcomingTracks(5).then(({ nextTrackIds }) => {
-                if (nextTrackIds.length < 3) {
-                  playSimilar(radio.seedTrackId!).catch(() => {});
-                }
-              }).catch(() => {});
-            }
-          }).catch(() => {});
-        } else {
-          set({ isPlaying: false, currentTrackId: null, position: 0 });
-          get().stopPolling();
-        }
-        return;
-      }
+      // Track ended naturally: backend's auto-advance watchdog handles this now
+      // (Rust thread keeps playback going even when webview throttles intervals).
+      // Frontend just reflects the new state on the next poll.
       // Stop polling if fully stopped
       if (!info.isPlaying && info.trackId == null) {
         get().stopPolling();
@@ -492,20 +490,31 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   init: async () => {
     try {
-      const [trackIdStr, posStr] = await Promise.all([
+      const [trackIdStr, posStr, queueSourceStr, shuffleStr, repeatStr] = await Promise.all([
         getPreference("session.trackId"),
         getPreference("session.position"),
+        getPreference("session.queueSource"),
+        getPreference("session.shuffle"),
+        getPreference("session.repeatMode"),
       ]);
       if (!trackIdStr) return;
       const trackId = parseInt(trackIdStr, 10);
       if (isNaN(trackId)) return;
       const position = posStr ? parseFloat(posStr) : 0;
+      const shuffle = shuffleStr === "true";
+      const repeatMode = repeatStr || "off";
       set({
         currentTrackId: trackId,
         position: isNaN(position) ? 0 : position,
         isPlaying: false,
+        queueSource: queueSourceStr ?? null,
+        shuffle,
+        repeatMode,
         _restoredFromSession: true,
       });
+      // Apply shuffle/repeat to the backend
+      setShuffleCmd(shuffle).catch(() => {});
+      setRepeatModeCmd(repeatMode).catch(() => {});
     } catch {
       // Ignore corrupt preferences
     }
@@ -557,6 +566,38 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       set({ audioRoute: event.payload });
       // Refresh device list so isDefault flags update
       get().refreshDevices();
+    }).catch(() => {});
+
+    // Backend auto-advance watchdog notifies us when a track ended and the
+    // next one started (or playback stopped at end of queue). Sync state and
+    // refresh radio queue if needed.
+    listen<number | null>("track-auto-advanced", (event) => {
+      const nextId = event.payload;
+      if (nextId == null) {
+        set({ isPlaying: false, currentTrackId: null, position: 0 });
+        get().stopPolling();
+        return;
+      }
+      set({ currentTrackId: nextId, position: 0, isPlaying: true });
+      setPreference("session.trackId", String(nextId)).catch(() => {});
+      setPreference("session.position", "0").catch(() => {});
+      get().startPolling();
+      // Radio auto-queue: top up similar tracks when queue runs low
+      getRadioState().then((radio) => {
+        if (radio.enabled && radio.seedTrackId) {
+          getUpcomingTracks(5).then(({ nextTrackIds }) => {
+            if (nextTrackIds.length < 3) {
+              playSimilar(radio.seedTrackId!).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }).catch(() => {});
+
+    // Backend watchdog recorded a play (threshold crossed or track finished) —
+    // keep the in-memory play count fresh even when the poll didn't observe it.
+    listen<number>("track-play-recorded", (event) => {
+      useLibraryStore.getState().recordTrackPlayed(event.payload);
     }).catch(() => {});
 
     // Listen for playback changes triggered by the assistant

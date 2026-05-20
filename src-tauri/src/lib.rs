@@ -75,11 +75,9 @@ fn set_click_through_focus(window: tauri::Window, enabled: bool) {
                 NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
             ];
         } else {
-            // Restore original style mask (rounded corners for full mode)
-            let orig_mask = SAVED_STYLE_MASK.load(std::sync::atomic::Ordering::Relaxed);
-            if orig_mask != 0 {
-                let _: () = msg_send![ns_window, setStyleMask: orig_mask];
-            }
+            // Borderless + FullSizeContentView for sharp corners, but WITHOUT NonactivatingPanel
+            // so the window activates normally on click in full mode
+            let _: () = msg_send![ns_window, setStyleMask: 32768_u64];
             let _: () = msg_send![ns_window, setCollectionBehavior:
                 NSWindowCollectionBehavior::empty()
             ];
@@ -102,7 +100,6 @@ fn set_window_level(window: tauri::Window, level: i32) {
 #[allow(unexpected_cfgs)]
 #[tauri::command]
 fn set_window_transparent(window: tauri::Window, transparent: bool) {
-    use cocoa::base::nil;
     use objc::{msg_send, sel, sel_impl, class};
     let ns_window = window.ns_window().unwrap() as cocoa::base::id;
     unsafe {
@@ -123,6 +120,7 @@ fn set_window_transparent(window: tauri::Window, transparent: bool) {
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 static SAVED_STYLE_MASK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static NOTCH_MODE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn set_webview_transparent(view: cocoa::base::id, transparent: bool) {
     unsafe {
@@ -152,6 +150,7 @@ fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) 
     use cocoa::appkit::NSWindowCollectionBehavior;
     let ns_window = window.ns_window().unwrap() as cocoa::base::id;
     unsafe {
+        NOTCH_MODE_ACTIVE.store(enable, std::sync::atomic::Ordering::Relaxed);
         if enable {
             // Save original style mask
             let orig_mask: u64 = msg_send![ns_window, styleMask];
@@ -170,7 +169,7 @@ fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) 
             let _: () = msg_send![ns_window, setAcceptsMouseMovedEvents: true];
 
             // Swizzle acceptsFirstMouse: on all views to return YES
-            use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Class, Sel};
+            use objc::runtime::Sel;
             extern "C" fn accepts_first_mouse(_this: &objc::runtime::Object, _cmd: Sel, _event: cocoa::base::id) -> bool {
                 true
             }
@@ -217,22 +216,22 @@ fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) 
                     let win_ptr = ns_window as usize;
                     let app_handle = window.app_handle().clone();
                     let block = block::ConcreteBlock::new(move |_event: cocoa::base::id| {
-                        unsafe {
-                            let win = win_ptr as cocoa::base::id;
-                            let mouse_loc: cocoa::foundation::NSPoint = msg_send![class!(NSEvent), mouseLocation];
-                            let frame: cocoa::foundation::NSRect = msg_send![win, frame];
-                            let inside = mouse_loc.x >= frame.origin.x
-                                && mouse_loc.x <= frame.origin.x + frame.size.width
-                                && mouse_loc.y >= frame.origin.y
-                                && mouse_loc.y <= frame.origin.y + frame.size.height;
-                            if !inside {
-                                let _ = app_handle.emit("notch-click-outside", ());
-                            } else {
-                                // Focus the window so hotkeys work
-                                let app: cocoa::base::id = msg_send![class!(NSApplication), sharedApplication];
-                                let _: () = msg_send![app, activateIgnoringOtherApps: true];
-                                let _: () = msg_send![win, makeKeyAndOrderFront: cocoa::base::nil];
-                            }
+                        // Only active in notch mode
+                        if !NOTCH_MODE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) { return; }
+                        let win = win_ptr as cocoa::base::id;
+                        let mouse_loc: cocoa::foundation::NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                        let frame: cocoa::foundation::NSRect = msg_send![win, frame];
+                        let inside = mouse_loc.x >= frame.origin.x
+                            && mouse_loc.x <= frame.origin.x + frame.size.width
+                            && mouse_loc.y >= frame.origin.y
+                            && mouse_loc.y <= frame.origin.y + frame.size.height;
+                        if !inside {
+                            let _ = app_handle.emit("notch-click-outside", ());
+                        } else {
+                            // Focus the window so hotkeys work
+                            let app: cocoa::base::id = msg_send![class!(NSApplication), sharedApplication];
+                            let _: () = msg_send![app, activateIgnoringOtherApps: true];
+                            let _: () = msg_send![win, makeKeyAndOrderFront: cocoa::base::nil];
                         }
                     });
                     let block = block.copy();
@@ -287,16 +286,20 @@ fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) 
             let _: () = msg_send![ns_window, setBackgroundColor: bg];
             let _: () = msg_send![ns_window, setOpaque: true];
             let _: () = msg_send![ns_window, setHasShadow: true];
-            // Restore original style mask (gives back rounded corners for full mode)
-            let orig_mask = SAVED_STYLE_MASK.load(std::sync::atomic::Ordering::Relaxed);
-            if orig_mask != 0 {
-                let _: () = msg_send![ns_window, setStyleMask: orig_mask];
-            }
+            // Borderless + FullSizeContentView for sharp corners, no NonactivatingPanel
+            let _: () = msg_send![ns_window, setStyleMask: 32768_u64];
             let _: () = msg_send![ns_window, setMovable: true];
             let _: () = msg_send![ns_window, setCollectionBehavior:
                 NSWindowCollectionBehavior::empty()
             ];
             let _: () = msg_send![ns_window, setLevel: 0_i32]; // NSNormalWindowLevel
+
+            // Undo _setPreventsActivation so window activates on click again
+            let prevents_sel = sel!(_setPreventsActivation:);
+            let responds: bool = msg_send![ns_window, respondsToSelector: prevents_sel];
+            if responds {
+                let _: () = msg_send![ns_window, _setPreventsActivation: false];
+            }
 
             // Restore webview background
             let content_view: cocoa::base::id = msg_send![ns_window, contentView];
@@ -329,6 +332,22 @@ fn get_notch_info(window: tauri::Window) -> (f64, f64) {
         let right_edge = aux_right.origin.x;
         let width = if right_edge > left_edge { right_edge - left_edge } else { screen_frame.size.width * 0.15 };
         (height, width)
+    }
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+#[tauri::command]
+fn toggle_fullscreen(window: tauri::Window) {
+    use objc::{msg_send, sel, sel_impl};
+    let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    unsafe {
+        let _: () = msg_send![ns_window, toggleFullScreen: cocoa::base::nil];
     }
 }
 
@@ -429,6 +448,35 @@ pub fn run() {
                         beginActivityWithOptions: 0x00FFFFFF_u64
                         reason: reason
                     ];
+                }
+            }
+
+            // Hide native traffic lights immediately (before webview loads)
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                if let Some(win) = app.get_webview_window("main") {
+                    use cocoa::appkit::NSWindowButton;
+                    use objc::{msg_send, sel, sel_impl};
+                    let ns_window = win.ns_window().unwrap() as cocoa::base::id;
+                    unsafe {
+                        let buttons = [
+                            NSWindowButton::NSWindowCloseButton,
+                            NSWindowButton::NSWindowMiniaturizeButton,
+                            NSWindowButton::NSWindowZoomButton,
+                        ];
+                        for btn_type in &buttons {
+                            let btn: cocoa::base::id = msg_send![ns_window, standardWindowButton:*btn_type];
+                            if btn != cocoa::base::nil {
+                                let _: () = msg_send![btn, setHidden: true];
+                            }
+                        }
+                        // Set borderless + FullSizeContentView for sharp corners
+                        // No NonactivatingPanel — window should activate on click in full mode
+                        let orig_mask: u64 = msg_send![ns_window, styleMask];
+                        SAVED_STYLE_MASK.store(orig_mask, std::sync::atomic::Ordering::Relaxed);
+                        let _: () = msg_send![ns_window, setStyleMask: 32768_u64];
+                    }
                 }
             }
 
@@ -813,6 +861,104 @@ pub fn run() {
                 });
             }
 
+            // Background watchdog: drive ALL playback continuity in Rust so it keeps
+            // working even when the webview throttles setInterval (window minimized /
+            // app in background). Mirrors what the frontend poll triggers when focused:
+            // gapless transitions, play-count recording, auto-crossfade, gapless
+            // pre-buffer, and natural-end auto-advance. Every step is mutex-guarded and
+            // idempotent, so it coexists safely with the frontend poll — whichever side
+            // observes a transition first handles it; the other gets a no-op.
+            {
+                let app_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        let playback = app_handle.state::<PlaybackState>();
+                        let db = app_handle.state::<Database>();
+
+                        // 1. Gapless: the pre-buffered track became the one playing —
+                        //    advance internal state and let the UI catch up.
+                        if let Some(new_id) = playback.check_gapless_transition() {
+                            let _ = app_handle.emit("track-auto-advanced", new_id);
+                        }
+
+                        // 2. Record a play once the current track crosses the threshold.
+                        if let Some(track_id) = playback.check_play_threshold() {
+                            if let Some(conn) = db.conn.lock().ok() {
+                                let _ = db::record_track_played(&conn, track_id);
+                            }
+                            let _ = app_handle.emit("track-play-recorded", track_id);
+                        }
+
+                        // 3. Auto-crossfade into the next track when near the end.
+                        if let Some(next_id) = playback.should_crossfade_next() {
+                            let info = db.conn.lock().ok().and_then(|conn| {
+                                db::get_track_file_info(&conn, next_id).ok().flatten()
+                            });
+                            if let Some((path, duration)) = info {
+                                if playback.play_with_crossfade(&path, next_id, duration).is_ok() {
+                                    let _ = app_handle.emit("track-auto-advanced", next_id);
+                                }
+                            }
+                        }
+
+                        // 4. Pre-buffer the next track for gapless playback (crossfade
+                        //    off only) within 10s of the end, so gapless still works
+                        //    while backgrounded. Mirrors the frontend's near-end trigger.
+                        if playback.crossfade_duration() <= 0.0
+                            && playback.is_playing()
+                            && !playback.has_next_appended()
+                        {
+                            if let Some(dur) = playback.duration() {
+                                if playback.position() > dur - 10.0 {
+                                    let (_prev, next) = playback.peek_upcoming(1);
+                                    if let Some(&next_id) = next.first() {
+                                        let info = db.conn.lock().ok().and_then(|conn| {
+                                            db::get_track_file_info(&conn, next_id).ok().flatten()
+                                        });
+                                        if let Some((path, duration)) = info {
+                                            let idx = playback.find_queue_index(next_id);
+                                            let _ = playback.pre_buffer_next(&path, next_id, duration, idx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 5. Plain natural end (nothing pre-buffered): advance and play.
+                        if playback.check_auto_advance() {
+                            // Mark the just-ended track as played if it wasn't already.
+                            if let Some((track_id, _pos, _dur, play_recorded)) = playback.current_play_state() {
+                                if !play_recorded {
+                                    if let Some(conn) = db.conn.lock().ok() {
+                                        let _ = db::record_track_played(&conn, track_id);
+                                    }
+                                    let _ = app_handle.emit("track-play-recorded", track_id);
+                                }
+                            }
+                            match playback.advance_next() {
+                                Some((next_id, _idx)) => {
+                                    let info = db.conn.lock().ok().and_then(|conn| {
+                                        db::get_track_file_info(&conn, next_id).ok().flatten()
+                                    });
+                                    if let Some((path, duration)) = info {
+                                        if playback.play(&path, next_id, duration).is_ok() {
+                                            let _ = app_handle.emit("track-auto-advanced", next_id);
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // End of queue with no repeat — stop so we don't
+                                    // keep re-detecting the same end-of-track state.
+                                    let _ = playback.stop();
+                                    let _ = app_handle.emit("track-auto-advanced", serde_json::Value::Null);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -1049,6 +1195,8 @@ pub fn run() {
             set_notch_mode,
             get_notch_info,
             set_app_icon,
+            quit_app,
+            toggle_fullscreen,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
