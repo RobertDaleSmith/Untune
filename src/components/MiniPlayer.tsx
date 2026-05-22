@@ -2,7 +2,7 @@ import { useRef, useCallback, useState, useEffect } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useDragRegion } from "../hooks/useDragRegion";
-import { getUpcomingTracks, setNotchMode } from "../lib/commands";
+import { getUpcomingTracks, setNotchMode, getFrequencyData } from "../lib/commands";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { YouTubePlayer } from "./YouTubePlayer";
@@ -36,11 +36,34 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
   const progressRef = useRef<HTMLDivElement>(null);
   const [modHeld, setModHeld] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [notchHover, setNotchHover] = useState(false);
+  const [notchHover, setNotchHover] = useState(false); // fully expanded (clicked)
+  const notchHoverRef = useRef(false);
+  const [notchPeek, setNotchPeek] = useState(false); // hover preview
   const [queueIds, setQueueIds] = useState<number[]>([]);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [energy, setEnergy] = useState(0);
+  const notchPillRef = useRef<HTMLDivElement>(null);
+
+  // Poll audio energy for reactive pulse in notch mode
+  useEffect(() => {
+    if (!isNotch || !isPlaying) { setEnergy(0); return; }
+    let running = true;
+    const poll = () => {
+      if (!running) return;
+      getFrequencyData().then((d) => {
+        if (running) setEnergy(d.energy);
+        if (running) requestAnimationFrame(poll);
+      }).catch(() => {
+        if (running) setTimeout(poll, 100);
+      });
+    };
+    requestAnimationFrame(poll);
+    return () => { running = false; };
+  }, [isNotch, isPlaying]);
 
   const COLLAPSED_H = 32;
   const EXPANDED_H = 280;
+  const NOTCH_PEEK_H = 56; // hover preview height
   const NOTCH_EXPANDED_W = 340;
   const NOTCH_EXPANDED_H = 340;
 
@@ -53,22 +76,57 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
     } catch { /* ignore */ }
   }, []);
 
+  const cancelCollapseTimer = useCallback(() => {
+    if (collapseTimerRef.current) { clearTimeout(collapseTimerRef.current); collapseTimerRef.current = null; }
+  }, []);
+
+  const notchPeekEnter = useCallback(async () => {
+    if (notchHoverRef.current) return;
+    cancelCollapseTimer();
+    setNotchPeek(true);
+    await notchResize(notchWidth + notchHeight, NOTCH_PEEK_H);
+  }, [notchResize, notchWidth, notchHeight, cancelCollapseTimer]);
+
+  const notchPeekLeave = useCallback(async () => {
+    if (notchHoverRef.current) return;
+    setNotchPeek(false);
+    collapseTimerRef.current = setTimeout(() => notchResize(notchWidth + notchHeight, notchHeight), 250);
+  }, [notchResize, notchWidth, notchHeight]);
+
   const notchOpen = useCallback(async () => {
-    if (notchHover) return;
+    if (notchHoverRef.current) return;
+    cancelCollapseTimer();
+    setNotchPeek(false);
+    notchHoverRef.current = true;
     setNotchHover(true);
+    getCurrentWindow().setFocus().catch(() => {});
     await notchResize(NOTCH_EXPANDED_W + 40, NOTCH_EXPANDED_H);
-  }, [notchHover, notchResize]);
+  }, [notchResize, cancelCollapseTimer]);
 
   const notchClose = useCallback(() => {
-    if (!notchHover) return;
+    notchHoverRef.current = false;
     setNotchHover(false);
+    setNotchPeek(false);
     setExpanded(false);
-    // Resize window after CSS animation completes to avoid capturing clicks
-    setTimeout(() => notchResize(notchWidth + notchHeight, notchHeight), 400);
-  }, [notchHover, notchResize, notchWidth, notchHeight]);
+    collapseTimerRef.current = setTimeout(async () => {
+      await notchResize(notchWidth + notchHeight, notchHeight);
+      // After shrink, check if mouse is still over the pill and re-trigger peek
+      const el = notchPillRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const handler = (e: MouseEvent) => {
+          if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+            notchPeekEnter();
+          }
+        };
+        document.addEventListener("mousemove", handler, { once: true });
+        // Clean up if no mouse move within 100ms
+        setTimeout(() => document.removeEventListener("mousemove", handler), 100);
+      }
+    }, 400);
+  }, [notchResize, notchWidth, notchHeight, notchPeekEnter]);
 
   // Close notch island on mouse leave, Escape, or focus loss
-  const notchPillRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isNotch || !notchHover) return;
     // Mouse leave with delay
@@ -95,6 +153,16 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
       unlisten.then((f) => f());
     };
   }, [isNotch, notchHover, notchClose]);
+
+  // Native hover monitor (macOS): the notch is a non-activating panel, so DOM
+  // hover events don't fire until it's focused. The Rust side watches the cursor
+  // and emits enter/leave; drive the peek preview from those.
+  useEffect(() => {
+    if (!isNotch) return;
+    const enter = listen("notch-hover-enter", () => { notchPeekEnter(); });
+    const leave = listen("notch-hover-leave", () => { notchPeekLeave(); });
+    return () => { enter.then((f) => f()); leave.then((f) => f()); };
+  }, [isNotch, notchPeekEnter, notchPeekLeave]);
 
   const toggleExpanded = useCallback(async () => {
     const next = !expanded;
@@ -158,9 +226,21 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
     }
     setBgTopReady(false);
     setBgTop(currentArtworkUrl);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setBgTopReady(true));
-    });
+    let started = false;
+    const startCrossfade = () => {
+      if (started) return;
+      started = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setBgTopReady(true));
+      });
+    };
+    // Gate the fade on a fully decoded bitmap so it can't stutter mid-flight,
+    // but never block longer than 150ms.
+    const img = new Image();
+    img.decoding = "async";
+    img.src = currentArtworkUrl;
+    img.decode().then(startCrossfade, startCrossfade);
+    setTimeout(startCrossfade, 150);
     const t = setTimeout(() => {
       setBgBottom(currentArtworkUrl);
       setBgTopReady(false);
@@ -190,7 +270,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
         style={{ background: "transparent", overflow: "visible", pointerEvents: "none" }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <div ref={notchPillRef} className="mx-auto relative" style={{ width: notchHover ? NOTCH_EXPANDED_W : notchWidth, transition: "width 0.35s ease-out", pointerEvents: "auto" }}>
+        <div ref={notchPillRef} className="mx-auto relative" style={{ width: notchHover ? NOTCH_EXPANDED_W : notchWidth, transition: "width 0.35s ease-out", pointerEvents: "auto" }} onMouseEnter={notchPeekEnter} onMouseLeave={notchPeekLeave} onMouseDown={() => getCurrentWindow().setFocus().catch(() => {})}>
           {/* Inverted/concave corners — smooth curve from bezel into pill top */}
           {(() => {
             const r = notchHover ? 14 : 8;
@@ -219,12 +299,12 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
             className="flex flex-col overflow-hidden"
             style={{
               width: "100%",
-              borderRadius: notchHover ? `0 0 14px 14px` : `0 0 8px 8px`,
+              borderRadius: notchHover ? `0 0 14px 14px` : notchPeek ? `0 0 10px 10px` : `0 0 8px 8px`,
               background: "rgba(0,0,0,0.95)",
               backdropFilter: "blur(20px)",
               WebkitBackdropFilter: "blur(20px)",
               transition: "border-radius 0.35s ease-out, max-height 0.35s ease-out",
-              maxHeight: notchHover ? NOTCH_EXPANDED_H : notchHeight,
+              maxHeight: notchHover ? NOTCH_EXPANDED_H : notchPeek ? NOTCH_PEEK_H : notchHeight,
             }}
           >
           {/* Collapsed pill: click blank space to expand */}
@@ -278,25 +358,79 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               )}
             </button>
 
-            {/* Progress ring */}
-            <div className="flex-shrink-0 relative w-4 h-4" onMouseDown={(e) => e.stopPropagation()}>
-              <svg width="16" height="16" viewBox="0 0 16 16" className="-rotate-90">
-                <circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" />
-                <circle cx="8" cy="8" r="6" fill="none" stroke="var(--color-accent, #fff)" strokeWidth="1.5"
-                  strokeDasharray={`${2 * Math.PI * 6}`}
-                  strokeDashoffset={`${2 * Math.PI * 6 * (1 - progressPct / 100)}`}
+            {/* Progress ring — doubles as the Next button. Shows the live progress
+                arc with a pulsing energy dot when collapsed; once the notch is
+                peeked/expanded the center becomes a skip icon. Clicking always skips
+                (the album art handles play/pause). */}
+            <button
+              className="flex-shrink-0 relative w-5 h-5 group/next cursor-pointer"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); next(); }}
+              title="Next"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" className="-rotate-90">
+                <circle cx="10" cy="10" r="8" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" />
+                <circle cx="10" cy="10" r="8" fill="none" stroke="var(--color-accent, #fff)" strokeWidth="1.5"
+                  strokeDasharray={`${2 * Math.PI * 8}`}
+                  strokeDashoffset={`${2 * Math.PI * 8 * (1 - progressPct / 100)}`}
                   strokeLinecap="round"
                 />
               </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-1 h-1 rounded-full bg-accent" />
-              </div>
-            </div>
+              {/* Collapsed: energy dot */}
+              {!(notchPeek || notchHover) && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="w-1.5 h-1.5 rounded-full bg-accent"
+                    style={{
+                      transform: `scale(${1 + energy * 2.5})`,
+                      opacity: isPlaying ? 0.6 + energy * 0.4 : 1,
+                      transition: "transform 0.05s ease-out, opacity 0.05s ease-out",
+                    }}
+                  />
+                </div>
+              )}
+              {/* Peeked/expanded: skip-next icon */}
+              {(notchPeek || notchHover) && (
+                <div className="absolute inset-0 flex items-center justify-center text-white/90 group-hover/next:text-white transition-colors">
+                  <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M1 2l9 6-9 6V2zM13 2v12h2V2h-2z" />
+                  </svg>
+                </div>
+              )}
+            </button>
           </div>
 
-          {/* Expanded content — below the notch */}
+          {/* Peek row — visible on hover, below the notch bar */}
           <div
-            className="flex flex-col px-2 gap-2 overflow-hidden"
+            className="flex items-center justify-between px-2 overflow-hidden"
+            style={{
+              maxHeight: (notchPeek || notchHover) ? 24 : 0,
+              opacity: (notchPeek || notchHover) ? 1 : 0,
+              transition: "max-height 0.25s ease-out, opacity 0.2s ease-out",
+            }}
+          >
+            {/* Track info — hidden when fully expanded: the expanded panel below
+                shows the title beside the enlarged artwork, and this row sits behind
+                the scaled-up art. Kept as a flex spacer so the controls stay right. */}
+            <div className="flex-1 min-w-0 mr-2">
+              {!notchHover && (currentTrack ? (
+                <>
+                  <div className="text-[9px] text-white/90 truncate leading-tight font-medium">{currentTrack.title}</div>
+                  <div className="text-[8px] text-white/50 truncate leading-tight">{currentTrack.artist}</div>
+                </>
+              ) : (
+                <div className="text-[8px] text-white/40">Not Playing</div>
+              ))}
+            </div>
+            {/* Transport lives on the pill itself: album art = play/pause,
+                progress ring = next. */}
+          </div>
+
+          {/* Expanded content — below the notch. Positioned above the scaled-up
+              artwork (which is a transformed element and would otherwise paint on
+              top) so the title and controls are never hidden behind it. */}
+          <div
+            className="relative z-10 flex flex-col px-2 gap-2 overflow-hidden"
             style={{
               opacity: notchHover ? 1 : 0,
               maxHeight: notchHover ? 400 : 0,
@@ -381,7 +515,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               src={bgBottom}
               alt=""
               className="absolute inset-[-24px] w-[calc(100%+48px)] h-[calc(100%+48px)] object-cover"
-              style={{ filter: "var(--mini-bg-filter)" }}
+              style={{ filter: "var(--mini-bg-filter)", transform: "translateZ(0)", backfaceVisibility: "hidden" }}
             />
           )}
           {bgTop && (
@@ -389,7 +523,7 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               src={bgTop}
               alt=""
               className="absolute inset-[-24px] w-[calc(100%+48px)] h-[calc(100%+48px)] object-cover transition-opacity duration-500 ease-in-out"
-              style={{ filter: "var(--mini-bg-filter)", opacity: bgTopReady ? 1 : 0 }}
+              style={{ filter: "var(--mini-bg-filter)", opacity: bgTopReady ? 1 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
             />
           )}
           <div className="absolute inset-0" style={{ backgroundColor: "var(--mini-bg-overlay)" }} />

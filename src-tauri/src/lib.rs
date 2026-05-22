@@ -245,6 +245,80 @@ fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) 
                 }
             }
 
+            // Hover monitors: a non-activating panel doesn't receive mouseMoved/
+            // mouseEntered events until it's the key window, so the webview's
+            // onMouseEnter never fires on plain hover. Watch the cursor system-wide
+            // (global, while other apps are active) and within our app (local, so it
+            // works when Untune itself is frontmost) and emit enter/leave only on
+            // region transitions so the frontend can reveal the peek preview.
+            {
+                use std::sync::atomic::AtomicBool;
+                static HOVER_MONITOR_INSTALLED: AtomicBool = AtomicBool::new(false);
+                static HOVER_INSIDE: AtomicBool = AtomicBool::new(false);
+                if !HOVER_MONITOR_INSTALLED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    let win_ptr = ns_window as usize;
+                    let mask: u64 = 1 << 5; // NSEventMaskMouseMoved
+
+                    // Global: fires while another app is frontmost (the ambient case).
+                    let g_handle = window.app_handle().clone();
+                    let g_block = block::ConcreteBlock::new(move |_event: cocoa::base::id| {
+                        if !NOTCH_MODE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+                            HOVER_INSIDE.store(false, std::sync::atomic::Ordering::Relaxed);
+                            return;
+                        }
+                        let win = win_ptr as cocoa::base::id;
+                        let mouse_loc: cocoa::foundation::NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                        let frame: cocoa::foundation::NSRect = msg_send![win, frame];
+                        let inside = mouse_loc.x >= frame.origin.x
+                            && mouse_loc.x <= frame.origin.x + frame.size.width
+                            && mouse_loc.y >= frame.origin.y
+                            && mouse_loc.y <= frame.origin.y + frame.size.height;
+                        let was_inside = HOVER_INSIDE.swap(inside, std::sync::atomic::Ordering::Relaxed);
+                        if inside && !was_inside {
+                            let _ = g_handle.emit("notch-hover-enter", ());
+                        } else if !inside && was_inside {
+                            let _ = g_handle.emit("notch-hover-leave", ());
+                        }
+                    });
+                    let g_block = g_block.copy();
+                    let _: cocoa::base::id = msg_send![
+                        class!(NSEvent),
+                        addGlobalMonitorForEventsMatchingMask: mask
+                        handler: &*g_block
+                    ];
+                    std::mem::forget(g_block);
+
+                    // Local: fires while Untune itself is frontmost. Must return the
+                    // event so normal delivery continues.
+                    let l_handle = window.app_handle().clone();
+                    let l_block = block::ConcreteBlock::new(move |event: cocoa::base::id| -> cocoa::base::id {
+                        if NOTCH_MODE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+                            let win = win_ptr as cocoa::base::id;
+                            let mouse_loc: cocoa::foundation::NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                            let frame: cocoa::foundation::NSRect = msg_send![win, frame];
+                            let inside = mouse_loc.x >= frame.origin.x
+                                && mouse_loc.x <= frame.origin.x + frame.size.width
+                                && mouse_loc.y >= frame.origin.y
+                                && mouse_loc.y <= frame.origin.y + frame.size.height;
+                            let was_inside = HOVER_INSIDE.swap(inside, std::sync::atomic::Ordering::Relaxed);
+                            if inside && !was_inside {
+                                let _ = l_handle.emit("notch-hover-enter", ());
+                            } else if !inside && was_inside {
+                                let _ = l_handle.emit("notch-hover-leave", ());
+                            }
+                        }
+                        event
+                    });
+                    let l_block = l_block.copy();
+                    let _: cocoa::base::id = msg_send![
+                        class!(NSEvent),
+                        addLocalMonitorForEventsMatchingMask: mask
+                        handler: &*l_block
+                    ];
+                    std::mem::forget(l_block);
+                }
+            }
+
             // Sync WindowServer prevents-activation flag after style mask change
             let prevents_sel = sel!(_setPreventsActivation:);
             let responds: bool = msg_send![ns_window, respondsToSelector: prevents_sel];

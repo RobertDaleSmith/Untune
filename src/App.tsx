@@ -7,9 +7,10 @@ import { useThemeStore } from "./stores/themeStore";
 import { useColumnBrowserStore, type BrowserColumn } from "./stores/columnBrowserStore";
 import { useActivityStore } from "./stores/activityStore";
 import { save, open } from "@tauri-apps/plugin-dialog";
-import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getUpcomingTracks, createPlaylist, createPlaylistFolder, exportLibrary, exportAiTags, importAiTags, exportPlaylistM3u } from "./lib/commands";
+import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlaying, stopPlayback, getUpcomingTracks, createPlaylist, createPlaylistFolder, exportLibrary, exportAiTags, importAiTags, exportPlaylistM3u, setTrafficLightsVisible } from "./lib/commands";
 import { fetchArtwork } from "./lib/artworkQueue";
 import { ImportProgress } from "./components/ImportProgress";
+import { WindowControls } from "./components/WindowControls";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
 import { ContentRouter } from "./components/ContentRouter";
@@ -59,6 +60,10 @@ function App() {
     document.body.style.background = isNotchMode ? "transparent" : "";
   }, [isNotchMode]);
 
+  // Hide native traffic lights — we use custom window controls
+  useEffect(() => {
+    setTrafficLightsVisible(false).catch(() => {});
+  }, []);
 
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -505,7 +510,7 @@ function App() {
     ).catch(() => {});
   }, [currentTrackId, isPlaying, tracks]);
 
-  // Load artwork globally when current track changes — uses shared cache
+  // Load artwork globally when current track changes
   useEffect(() => {
     const track = currentTrackId != null ? tracks.find((t) => t.id === currentTrackId) : null;
     if (!track?.artworkHash) {
@@ -657,12 +662,24 @@ function App() {
       const t = setTimeout(() => setBgBottom(null), 600);
       return () => clearTimeout(t);
     }
+    // Preload image, but don't wait more than 100ms
     setBgTopReady(false);
     setBgTop(currentArtworkUrl);
-    // Double rAF ensures the browser has painted opacity:0 before transitioning to 1
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setBgTopReady(true));
-    });
+    let started = false;
+    const startCrossfade = () => {
+      if (started) return;
+      started = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setBgTopReady(true));
+      });
+    };
+    const img = new Image();
+    img.decoding = "async";
+    img.src = currentArtworkUrl;
+    // Wait for the bitmap to fully decode so the fade can't stutter mid-flight,
+    // but never block longer than 150ms.
+    img.decode().then(startCrossfade, startCrossfade);
+    setTimeout(startCrossfade, 150);
     const t = setTimeout(() => {
       setBgBottom(currentArtworkUrl);
       setBgTopReady(false);
@@ -670,6 +687,19 @@ function App() {
     }, 700);
     return () => clearTimeout(t);
   }, [currentArtworkUrl]);
+
+  // Pre-cache next track's artwork into fetchArtwork cache for instant crossfade
+  useEffect(() => {
+    if (!currentTrackId) return;
+    getUpcomingTracks(3).then(({ nextTrackIds }) => {
+      for (const id of nextTrackIds) {
+        const t = tracks.find((tr) => tr.id === id);
+        if (t?.artworkHash) {
+          fetchArtwork(t.artworkHash).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+  }, [currentTrackId, tracks]);
 
   const handleImportComplete = useCallback(() => {
     // Progress modal auto-dismisses, tracks load in handleImport
@@ -700,8 +730,11 @@ function App() {
   if (!isImported && !isImporting) {
     return (
       <div className="fixed inset-0 z-[10000] flex flex-col">
-        {/* Title bar drag region */}
-        <div className="h-10 flex-shrink-0" data-tauri-drag-region onMouseDown={onDrag} />
+        {/* Title bar with window controls */}
+        <div className="h-10 flex-shrink-0 flex items-center">
+          <WindowControls />
+          <div className="flex-1 h-full" data-tauri-drag-region onMouseDown={onDrag} />
+        </div>
 
         <div className="flex-1" data-tauri-drag-region onMouseDown={onDrag} />
 
@@ -757,22 +790,29 @@ function App() {
               src={bgBottom}
               alt=""
               className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover"
-              style={{ filter: "var(--accent-filter)" }}
+              style={{ filter: "var(--accent-filter)", transform: "translateZ(0)", backfaceVisibility: "hidden" }}
             />
           )}
-          {/* Top layer: incoming artwork, fades in over bottom */}
+          {/* Top layer: incoming artwork, fades in over bottom. Promoted to its own
+              compositor layer so the blur is cached once and the opacity fade runs on
+              the GPU instead of re-rasterizing the 64px blur every frame. */}
           {bgTop && (
             <img
               src={bgTop}
               alt=""
               className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover transition-opacity duration-500 ease-in-out"
-              style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0 }}
+              style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
             />
           )}
           {/* Theme-adaptive overlay for readability */}
           <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
         </div>
       )}
+
+      {/* Window controls */}
+      <div className="fixed top-0 left-0 z-[9999]">
+        <WindowControls />
+      </div>
 
       {/* Main UI */}
       <div className="relative z-10 flex flex-col h-full">
