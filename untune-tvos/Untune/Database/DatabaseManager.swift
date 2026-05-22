@@ -20,7 +20,9 @@ class DatabaseManager {
 
             var config = Configuration()
             config.prepareDatabase { db in
+                #if DEBUG
                 db.trace { print("SQL: \($0)") }
+                #endif
             }
 
             dbPool = try DatabasePool(path: dbURL.path, configuration: config)

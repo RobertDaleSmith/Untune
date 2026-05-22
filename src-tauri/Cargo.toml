@@ -1,10 +1,10 @@
 [package]
 name = "untune"
-version = "0.1.0"
+version = "1.0.0"
 description = "Untune — a fast, data-dense music player"
-authors = ["you"]
-license = ""
-repository = ""
+authors = ["Robert Dale Smith"]
+license = "MIT"
+repository = "https://github.com/RobertDaleSmith/Untune"
 edition = "2021"
 rust-version = "1.77.2"
 

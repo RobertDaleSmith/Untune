@@ -1,7 +1,13 @@
 {
   "name": "untune",
   "version": "1.0.0",
-  "description": "",
+  "description": "Untune — a fast, data-dense music player for macOS, iOS, and Apple TV",
+  "license": "MIT",
+  "author": "Robert Dale Smith",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RobertDaleSmith/Untune.git"
+  },
   "private": true,
   "type": "module",
   "scripts": {

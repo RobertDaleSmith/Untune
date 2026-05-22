@@ -20,7 +20,9 @@ class DatabaseManager {
 
             var config = Configuration()
             config.prepareDatabase { db in
+                #if DEBUG
                 db.trace { print("SQL: \($0)") }
+                #endif
             }
 
             dbPool = try DatabasePool(path: dbURL.path, configuration: config)
@@ -203,6 +205,76 @@ class DatabaseManager {
         try dbPool.read { db in
             let sql = "SELECT * FROM tracks WHERE localPath IS NOT NULL ORDER BY RANDOM() LIMIT ?"
             return try TrackRecord.fetchAll(db, sql: sql, arguments: [limit])
+                .map { $0.toTrack() }
+        }
+    }
+
+    // MARK: - CarPlay (lightweight queries)
+
+    struct ArtistSummary {
+        let name: String
+        let trackCount: Int
+    }
+
+    struct AlbumSummary {
+        let name: String
+        let artist: String
+        let trackCount: Int
+        let artworkHash: String?
+    }
+
+    func fetchArtistSummaries() throws -> [ArtistSummary] {
+        try dbPool.read { db in
+            let sql = """
+                SELECT COALESCE(NULLIF(albumArtist,''), NULLIF(artist,''), 'Unknown Artist') as name,
+                       COUNT(*) as trackCount
+                FROM tracks
+                GROUP BY name
+                ORDER BY name COLLATE NOCASE
+                """
+            return try Row.fetchAll(db, sql: sql).map { row in
+                ArtistSummary(name: row["name"], trackCount: row["trackCount"])
+            }
+        }
+    }
+
+    func fetchAlbumSummaries() throws -> [AlbumSummary] {
+        try dbPool.read { db in
+            let sql = """
+                SELECT COALESCE(album, 'Unknown Album') as name,
+                       COALESCE(NULLIF(albumArtist,''), NULLIF(artist,''), 'Unknown Artist') as artist,
+                       COUNT(*) as trackCount,
+                       artworkHash
+                FROM tracks
+                GROUP BY name
+                ORDER BY name COLLATE NOCASE
+                """
+            return try Row.fetchAll(db, sql: sql).map { row in
+                AlbumSummary(name: row["name"], artist: row["artist"], trackCount: row["trackCount"], artworkHash: row["artworkHash"])
+            }
+        }
+    }
+
+    func fetchTracksForArtist(_ artistName: String) throws -> [Track] {
+        try dbPool.read { db in
+            let sql = """
+                SELECT * FROM tracks
+                WHERE COALESCE(NULLIF(albumArtist,''), NULLIF(artist,''), 'Unknown Artist') = ?
+                ORDER BY COALESCE(album,''), discNumber, trackNumber
+                """
+            return try TrackRecord.fetchAll(db, sql: sql, arguments: [artistName])
+                .map { $0.toTrack() }
+        }
+    }
+
+    func fetchTracksForAlbum(_ albumName: String) throws -> [Track] {
+        try dbPool.read { db in
+            let sql = """
+                SELECT * FROM tracks
+                WHERE COALESCE(album, 'Unknown Album') = ?
+                ORDER BY discNumber, trackNumber
+                """
+            return try TrackRecord.fetchAll(db, sql: sql, arguments: [albumName])
                 .map { $0.toTrack() }
         }
     }
