@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useNavigationStore } from "./stores/navigationStore";
 import { usePlaybackStore } from "./stores/playbackStore";
@@ -11,6 +12,7 @@ import { getTracks, getTrackCount, importLibrary, updateNowPlaying, clearNowPlay
 import { fetchArtwork } from "./lib/artworkQueue";
 import { ImportProgress } from "./components/ImportProgress";
 import { WindowControls } from "./components/WindowControls";
+import { ResizeGripper } from "./components/ResizeGripper";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { Sidebar } from "./components/Sidebar";
 import { ContentRouter } from "./components/ContentRouter";
@@ -653,6 +655,22 @@ function App() {
   const [bgTopReady, setBgTopReady] = useState(false);
   const prevArtworkRef = useRef<string | null>(null);
 
+  // Drop the expensive blurred background while the window is actively resizing.
+  // A 64px blur on a full-window box re-rasterizes on every live-resize frame,
+  // which makes dragging the resize handle crawl. Hide the blurred layers during
+  // the drag (the theme overlay stays, so there's no flash) and bring them back
+  // ~150ms after the last resize event.
+  const [resizing, setResizing] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unlisten = getCurrentWindow().onResized(() => {
+      setResizing(true);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setResizing(false), 150);
+    });
+    return () => { if (timer) clearTimeout(timer); unlisten.then((f) => f()); };
+  }, []);
+
   useEffect(() => {
     if (currentArtworkUrl === prevArtworkRef.current) return;
     prevArtworkRef.current = currentArtworkUrl;
@@ -785,7 +803,7 @@ function App() {
       {showAlbumAccent && (
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true" style={{ transform: "translateZ(0)" }}>
           {/* Bottom layer: previous/stable artwork — blur baked per-image for GPU compositing */}
-          {bgBottom && (
+          {!resizing && bgBottom && (
             <img
               src={bgBottom}
               alt=""
@@ -796,7 +814,7 @@ function App() {
           {/* Top layer: incoming artwork, fades in over bottom. Promoted to its own
               compositor layer so the blur is cached once and the opacity fade runs on
               the GPU instead of re-rasterizing the 64px blur every frame. */}
-          {bgTop && (
+          {!resizing && bgTop && (
             <img
               src={bgTop}
               alt=""
@@ -813,6 +831,9 @@ function App() {
       <div className="fixed top-0 left-0 z-[9999]">
         <WindowControls />
       </div>
+
+      {/* Resize handle (borderless window has no native resize edge) */}
+      <ResizeGripper />
 
       {/* Main UI */}
       <div className="relative z-10 flex flex-col h-full">

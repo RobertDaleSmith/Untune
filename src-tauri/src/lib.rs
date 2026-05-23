@@ -77,7 +77,7 @@ fn set_click_through_focus(window: tauri::Window, enabled: bool) {
         } else {
             // Borderless + FullSizeContentView for sharp corners, but WITHOUT NonactivatingPanel
             // so the window activates normally on click in full mode
-            let _: () = msg_send![ns_window, setStyleMask: 32768_u64];
+            let _: () = msg_send![ns_window, setStyleMask: (8_u64 | 32768_u64)]; // Resizable | FullSizeContentView
             let _: () = msg_send![ns_window, setCollectionBehavior:
                 NSWindowCollectionBehavior::empty()
             ];
@@ -361,7 +361,7 @@ fn set_notch_mode(window: tauri::Window, enable: bool, width: f64, height: f64) 
             let _: () = msg_send![ns_window, setOpaque: true];
             let _: () = msg_send![ns_window, setHasShadow: true];
             // Borderless + FullSizeContentView for sharp corners, no NonactivatingPanel
-            let _: () = msg_send![ns_window, setStyleMask: 32768_u64];
+            let _: () = msg_send![ns_window, setStyleMask: (8_u64 | 32768_u64)]; // Resizable | FullSizeContentView
             let _: () = msg_send![ns_window, setMovable: true];
             let _: () = msg_send![ns_window, setCollectionBehavior:
                 NSWindowCollectionBehavior::empty()
@@ -549,7 +549,7 @@ pub fn run() {
                         // No NonactivatingPanel — window should activate on click in full mode
                         let orig_mask: u64 = msg_send![ns_window, styleMask];
                         SAVED_STYLE_MASK.store(orig_mask, std::sync::atomic::Ordering::Relaxed);
-                        let _: () = msg_send![ns_window, setStyleMask: 32768_u64];
+                        let _: () = msg_send![ns_window, setStyleMask: (8_u64 | 32768_u64)]; // Resizable | FullSizeContentView
                     }
                 }
             }
