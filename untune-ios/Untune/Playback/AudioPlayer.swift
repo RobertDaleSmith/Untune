@@ -48,7 +48,7 @@ class AudioPlayer {
     private let playThresholdFraction = 0.5
     private let playThresholdMax: Double = 240
 
-    private let nowPlayingManager = NowPlayingManager()
+    let nowPlayingManager = NowPlayingManager()
     private let defaults = UserDefaults.standard
 
     private enum StorageKey {
@@ -134,6 +134,7 @@ class AudioPlayer {
         updateAccentColor(for: track)
         nowPlayingManager.updateNowPlaying(track: track, position: savedPosition, duration: duration)
         nowPlayingManager.setupRemoteCommands(player: self)
+        nowPlayingManager.updateShuffleRepeatState(shuffle: shuffle, repeatMode: repeatMode)
 
         // Create AVPlayer in paused state so resume() works immediately
         if let url = audioURL(for: track) {
@@ -213,6 +214,30 @@ class AudioPlayer {
         }
     }
 
+    /// Tracks coming up after the current one
+    var upcomingTracks: [Track] {
+        guard !queue.isEmpty else { return [] }
+        if shuffle {
+            // Return tracks from shuffleOrder after current position
+            let currentShufflePos = shuffleOrder.firstIndex(of: queueIndex) ?? 0
+            let upcomingIndices = shuffleOrder.dropFirst(currentShufflePos + 1)
+            return upcomingIndices.prefix(50).compactMap { idx in
+                idx < queue.count ? queue[idx] : nil
+            }
+        } else {
+            let start = queueIndex + 1
+            guard start < queue.count else { return [] }
+            return Array(queue[start..<min(start + 50, queue.count)])
+        }
+    }
+
+    /// Jump to a specific index in the queue and play
+    func skipToQueueIndex(_ index: Int) {
+        guard index >= 0, index < queue.count else { return }
+        queueIndex = index
+        loadAndPlay(queue[index])
+    }
+
     func next() {
         guard !queue.isEmpty else { return }
 
@@ -270,6 +295,7 @@ class AudioPlayer {
             generateShuffleOrder(startingWith: queueIndex)
         }
         saveState()
+        nowPlayingManager.updateShuffleRepeatState(shuffle: shuffle, repeatMode: repeatMode)
     }
 
     func cycleRepeat() {
@@ -279,6 +305,7 @@ class AudioPlayer {
         case .one: repeatMode = .off
         }
         saveState()
+        nowPlayingManager.updateShuffleRepeatState(shuffle: shuffle, repeatMode: repeatMode)
     }
 
     func playTrackFromQueue(at index: Int) {

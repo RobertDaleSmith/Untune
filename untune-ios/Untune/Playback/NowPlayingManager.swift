@@ -44,6 +44,18 @@ class NowPlayingManager {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
+    func updateShuffleRepeatState(shuffle: Bool, repeatMode: RepeatMode) {
+        let center = MPRemoteCommandCenter.shared()
+        // Update shuffle state — CarPlay reads currentShuffleType
+        center.changeShuffleModeCommand.currentShuffleType = shuffle ? .items : .off
+        // Update repeat state — CarPlay reads currentRepeatType
+        switch repeatMode {
+        case .off: center.changeRepeatModeCommand.currentRepeatType = .off
+        case .all: center.changeRepeatModeCommand.currentRepeatType = .all
+        case .one: center.changeRepeatModeCommand.currentRepeatType = .one
+        }
+    }
+
     func setupRemoteCommands(player: AudioPlayer) {
         guard !commandsConfigured else { return }
         commandsConfigured = true
