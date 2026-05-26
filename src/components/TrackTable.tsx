@@ -362,9 +362,13 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
   const topPad = windowStart * ROW_HEIGHT;
   const bottomPad = (rows.length - windowEnd) * ROW_HEIGHT;
 
-  // Auto-scroll to the playing track when it changes
+  // Auto-scroll to the playing track only when the track changes (not on scroll/window changes)
+  const prevTrackForScroll = useRef(currentTrackId);
   useEffect(() => {
     if (currentTrackId == null) return;
+    if (currentTrackId === prevTrackForScroll.current) return;
+    prevTrackForScroll.current = currentTrackId;
+
     const idx = rows.findIndex((r) => r.original.id === currentTrackId);
     if (idx < 0) return;
     const el = parentRef.current;
@@ -382,7 +386,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
     if (targetTop < scrollTop || targetTop + ROW_HEIGHT > scrollTop + viewportHeight) {
       el.scrollTop = targetTop - viewportHeight / 2 + ROW_HEIGHT / 2;
     }
-  }, [currentTrackId, rows, scrollToNowPlaying, windowStart, windowEnd]);
+  }, [currentTrackId, rows, windowStart, windowEnd]);
 
   // Flash the playing row when jump-to-now-playing is triggered
   const prevScrollSignal = useRef(scrollToNowPlaying);
@@ -837,7 +841,7 @@ export function TrackTable({ tracks, source }: TrackTableProps) {
                   <button
                     className="w-full text-left px-3 py-1.5 text-n-200 hover:bg-n-700"
                     onClick={() => {
-                      navigateToAlbum(track.album!, track.artist ?? null);
+                      navigateToAlbum(track.album!, track.albumArtist ?? track.artist ?? null);
                       setContextMenu(null);
                     }}
                   >

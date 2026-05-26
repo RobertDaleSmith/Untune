@@ -171,7 +171,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       }
 
       setClickThroughFocus(false).catch(() => {});
-      setTrafficLightsVisible(true).catch(() => {});
+      setTrafficLightsVisible(false).catch(() => {});
 
       if (isNotch) {
         await setNotchMode(false, 0, 0);

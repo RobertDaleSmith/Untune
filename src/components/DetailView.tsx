@@ -73,19 +73,23 @@ export function DetailView({
   const [editorOpen, setEditorOpen] = useState(false);
   const navigateTo = useNavigationStore((s) => s.navigateTo);
   const detailVersion = useNavigationStore((s) => s.detailVersion);
-  const libraryTracks = useLibraryStore((s) => s.tracks);
-
-  // Sync rating/metadata changes from the library store into local tracks
+  // Sync rating/metadata changes from the library store into local tracks (debounced)
+  const libVersion = useLibraryStore((s) => s.tracks.length); // cheap selector — only triggers on add/remove
   useEffect(() => {
     if (tracks.length === 0) return;
-    const libMap = new Map(libraryTracks.map((t) => [t.id, t]));
-    setTracks((prev) =>
-      prev.map((t) => {
-        const lib = libMap.get(t.id);
-        return lib && (lib.rating !== t.rating || lib.sourceUrl !== t.sourceUrl) ? { ...t, rating: lib.rating, sourceUrl: lib.sourceUrl } : t;
-      }),
-    );
-  }, [libraryTracks]);
+    const libTracks = useLibraryStore.getState().tracks;
+    const libMap = new Map(libTracks.map((t) => [t.id, t]));
+    let changed = false;
+    const updated = tracks.map((t) => {
+      const lib = libMap.get(t.id);
+      if (lib && (lib.rating !== t.rating || lib.sourceUrl !== t.sourceUrl)) {
+        changed = true;
+        return { ...t, rating: lib.rating, sourceUrl: lib.sourceUrl };
+      }
+      return t;
+    });
+    if (changed) setTracks(updated);
+  }, [libVersion, tracks.length]);
   const browserVisible = useColumnBrowserStore((s) => s.visible);
   const selectedGenre = useColumnBrowserStore((s) => s.selectedGenre);
   const selectedArtist = useColumnBrowserStore((s) => s.selectedArtist);

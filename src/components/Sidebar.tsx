@@ -209,6 +209,19 @@ export function Sidebar() {
     return () => window.removeEventListener("untune-open-smart-editor", handler);
   }, []);
 
+  // Toggle visualizer from window controls green button
+  useEffect(() => {
+    const handler = () => {
+      if (lightboxOpen) {
+        setLightboxOpen(false);
+      } else {
+        openLightbox();
+      }
+    };
+    window.addEventListener("untune-toggle-visualizer", handler);
+    return () => window.removeEventListener("untune-toggle-visualizer", handler);
+  }, [openLightbox, lightboxOpen]);
+
   // Close context menu on click anywhere
   useEffect(() => {
     if (!contextMenu) return;
