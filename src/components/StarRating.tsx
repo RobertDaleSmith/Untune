@@ -26,11 +26,17 @@ export const StarRating = memo(function StarRating({ trackId, rating }: StarRati
   return (
     <span
       className="inline-flex gap-0 cursor-pointer"
+      // Opt out of the row's HTML5 drag — without this, WebKit treats a click on
+      // a child of a draggable=true ancestor as a potential drag and the click
+      // event never fires.
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
       onMouseLeave={() => setHoverStar(null)}
     >
       {[1, 2, 3, 4, 5].map((star) => (
         <span
           key={star}
+          draggable={false}
           className={`text-[11px] leading-none px-[1px] py-1 ${
             star <= displayStars ? "text-accent" : "text-n-600"
           } hover:text-accent`}

@@ -409,10 +409,9 @@ export function MiniPlayer({ tracks }: MiniPlayerProps) {
               transition: "max-height 0.25s ease-out, opacity 0.2s ease-out",
             }}
           >
-            {/* Track info — hidden when fully expanded: the expanded panel below
-                shows the title beside the enlarged artwork, and this row sits behind
-                the scaled-up art. Kept as a flex spacer so the controls stay right. */}
-            <div className="flex-1 min-w-0 mr-2">
+            {/* Track info — centered in the peek row, nudged up 3px; hidden when
+                fully expanded (the expanded panel shows the title beside the art). */}
+            <div className="flex-1 min-w-0 text-center" style={{ transform: "translateY(-3px)" }}>
               {!notchHover && (currentTrack ? (
                 <>
                   <div className="text-[9px] text-white/90 truncate leading-tight font-medium">{currentTrack.title}</div>

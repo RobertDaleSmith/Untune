@@ -61,8 +61,14 @@ function ensureYTApi(): Promise<void> {
   });
 }
 
-/** Hard-seek when drift exceeds this many seconds */
-const SEEK_THRESHOLD = 1;
+/** A local-position jump larger than this means the user scrubbed — seek the video. */
+const USER_SEEK_THRESHOLD = 1.5;
+/** Only correct YouTube drift beyond this. The video is muted background visuals, so
+ *  loose sync is fine; tight correction causes a seek→buffer→drift→seek reload loop. */
+const DRIFT_TOLERANCE = 3;
+/** After any seek, skip drift correction this long so the buffer can settle
+ *  (getCurrentTime is unreliable mid-buffer and would trigger an immediate re-seek). */
+const SEEK_COOLDOWN_MS = 4000;
 /** How often to check drift and sync (ms) */
 const SYNC_INTERVAL = 1000;
 /** Offset added to local position when syncing to YouTube (compensates for YT startup lag) */
@@ -75,6 +81,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes
   const positionRef = useRef(position);
   const isPlayingRef = useRef(isPlaying);
   const readyRef = useRef(false);
+  const lastSeekRef = useRef(0);
   const [visible, setVisible] = useState(false);
 
   // Keep refs in sync
@@ -95,23 +102,31 @@ export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes
   // Periodic check — only sync play/pause state and correct truly massive drift
   const syncState = useCallback(() => {
     const player = playerRef.current;
-    if (!player?.getCurrentTime || !readyRef.current) return;
+    if (!player?.getPlayerState) return;
+    // Lift the black cover as soon as the video is actually playing. Don't rely
+    // solely on the onStateChange PLAYING event — the YT iframe delivers it via
+    // postMessage, which a webview can drop, leaving the video playing behind a
+    // stuck black cover ("works sometimes, then just black").
     try {
-      // Only hard-seek if way off (5s+)
-      const target = positionRef.current + YT_OFFSET;
-      const ytTime = player.getCurrentTime();
-      const drift = Math.abs(ytTime - target);
-      if (drift > SEEK_THRESHOLD) {
-        player.seekTo(target, true);
-      }
-      // Keep play/pause in sync
+      if (player.getPlayerState() === YT.PlayerState.PLAYING) setVisible(true);
+    } catch { /* player not ready yet */ }
+    if (!player.getCurrentTime || !readyRef.current) return;
+    try {
+      // Keep play/pause in sync (cheap, no reload)
       if (isPlayingRef.current) {
         tryPlay(player);
-      } else {
-        const state = player.getPlayerState();
-        if (state === YT.PlayerState.PLAYING) {
-          player.pauseVideo();
-        }
+      } else if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+        player.pauseVideo();
+      }
+      // Drift correction: tolerant, and never right after a seek. A seek forces a
+      // buffer during which the (unpaused) local audio races ahead, so aggressive
+      // correction becomes a seek→buffer→drift→seek reload loop.
+      if (Date.now() - lastSeekRef.current < SEEK_COOLDOWN_MS) return;
+      const target = positionRef.current + YT_OFFSET;
+      const drift = Math.abs(player.getCurrentTime() - target);
+      if (drift > DRIFT_TOLERANCE) {
+        player.seekTo(target, true);
+        lastSeekRef.current = Date.now();
       }
     } catch {
       // player may not be ready yet
@@ -132,6 +147,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes
           videoId,
           startSeconds: Math.floor(positionRef.current + YT_OFFSET),
         });
+        lastSeekRef.current = Date.now();
         return;
       }
 
@@ -162,6 +178,7 @@ export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes
             readyRef.current = true;
             event.target.mute();
             event.target.seekTo(positionRef.current + YT_OFFSET, true);
+            lastSeekRef.current = Date.now();
             if (isPlayingRef.current) {
               event.target.playVideo();
             }
@@ -169,11 +186,6 @@ export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes
           onStateChange: (event: YT.OnStateChangeEvent) => {
             if (event.data === YT.PlayerState.PLAYING) {
               setVisible(true);
-              const target = positionRef.current + YT_OFFSET;
-              const drift = Math.abs(event.target.getCurrentTime() - target);
-              if (drift > 0.5) {
-                event.target.seekTo(target, true);
-              }
             }
             if (
               isPlayingRef.current &&
@@ -225,10 +237,10 @@ export function YouTubePlayer({ videoId, position, isPlaying, className, fullRes
   useEffect(() => {
     const delta = Math.abs(position - prevPositionRef.current);
     prevPositionRef.current = position;
-    if (delta > SEEK_THRESHOLD) {
+    if (delta > USER_SEEK_THRESHOLD) {
       const player = playerRef.current;
       if (player?.seekTo) {
-        try { player.seekTo(position + YT_OFFSET, true); } catch { /* ignore */ }
+        try { player.seekTo(position + YT_OFFSET, true); lastSeekRef.current = Date.now(); } catch { /* ignore */ }
       }
     }
   }, [position]);
