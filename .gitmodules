@@ -1,0 +1,6 @@
+[submodule "src-tauri/vendor/Highly_Experimental"]
+	path = src-tauri/vendor/Highly_Experimental
+	url = https://github.com/kode54/Highly_Experimental.git
+[submodule "src-tauri/vendor/psflib"]
+	path = src-tauri/vendor/psflib
+	url = https://github.com/kode54/psflib.git

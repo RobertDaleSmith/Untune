@@ -4,6 +4,7 @@ mod assistant;
 mod airplay;
 mod audio;
 mod gme_source;
+#[cfg(feature = "psf")]
 mod psf_source;
 mod commands;
 mod db;

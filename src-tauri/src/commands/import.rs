@@ -5,6 +5,7 @@ use walkdir::WalkDir;
 use crate::commands::ai_tags::AiTaggingState;
 use crate::db::Database;
 use crate::gme_source;
+#[cfg(feature = "psf")]
 use crate::psf_source;
 use crate::import::artwork;
 use crate::models::{ImportStats, MergedTrack};
@@ -69,6 +70,13 @@ pub fn reset_library(
     Ok(())
 }
 
+#[cfg(not(feature = "psf"))]
+const IMPORT_AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "m4a", "aac", "flac", "aif", "aiff", "wav", "ogg", "alac", "opus",
+    "spc", "nsf", "nsfe", "gbs", "vgm", "vgz", "gym", "ay", "hes", "kss", "sap",
+];
+
+#[cfg(feature = "psf")]
 const IMPORT_AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "aac", "flac", "aif", "aiff", "wav", "ogg", "alac", "opus",
     "spc", "nsf", "nsfe", "gbs", "vgm", "vgz", "gym", "ay", "hes", "kss", "sap",
@@ -165,13 +173,23 @@ fn import_files_blocking(app: &AppHandle, paths: &[String]) -> Result<ImportFile
             .unwrap_or_default();
 
         let is_gme = gme_source::GME_EXTENSIONS.contains(&ext.as_str());
+        #[cfg(feature = "psf")]
         let is_psf = psf_source::PSF_EXTENSIONS.contains(&ext.as_str());
+        #[cfg(not(feature = "psf"))]
+        let is_psf = false;
 
         if is_gme || is_psf {
             let (title, artist, game, duration, sr) = if is_psf {
-                let meta = psf_source::read_psf_metadata(&file_path_str);
-                let sr = if ext == "psf2" || ext == "minipsf2" { 48000 } else { 44100 };
-                (meta.title, meta.artist, meta.game, meta.duration, sr)
+                #[cfg(feature = "psf")]
+                {
+                    let meta = psf_source::read_psf_metadata(&file_path_str);
+                    let sr = if ext == "psf2" || ext == "minipsf2" { 48000 } else { 44100 };
+                    (meta.title, meta.artist, meta.game, meta.duration, sr)
+                }
+                #[cfg(not(feature = "psf"))]
+                {
+                    unreachable!("is_psf is false without the psf feature")
+                }
             } else {
                 let meta = gme_source::read_gme_metadata(&file_path_str);
                 (meta.title, meta.artist, meta.game, meta.duration, 44100)

@@ -16,6 +16,7 @@ use symphonia::default::get_codecs;
 use symphonia::default::get_probe;
 
 use crate::gme_source::{self, GmeSource};
+#[cfg(feature = "psf")]
 use crate::psf_source::{self, PsfSource};
 
 const MAX_DECODE_RETRIES: usize = 3;
@@ -32,6 +33,7 @@ enum AudioInner {
         total_duration: Option<Duration>,
     },
     Gme(GmeSource),
+    #[cfg(feature = "psf")]
     Psf(PsfSource),
 }
 
@@ -58,11 +60,14 @@ impl AudioSource {
             });
         }
 
-        if psf_source::PSF_EXTENSIONS.contains(&ext.as_str()) {
-            let psf = PsfSource::open(path)?;
-            return Ok(AudioSource {
-                inner: AudioInner::Psf(psf),
-            });
+        #[cfg(feature = "psf")]
+        {
+            if psf_source::PSF_EXTENSIONS.contains(&ext.as_str()) {
+                let psf = PsfSource::open(path)?;
+                return Ok(AudioSource {
+                    inner: AudioInner::Psf(psf),
+                });
+            }
         }
 
         // Standard Symphonia path
@@ -212,6 +217,7 @@ impl Iterator for AudioSource {
     fn next(&mut self) -> Option<i16> {
         match &mut self.inner {
             AudioInner::Gme(gme) => gme.next(),
+            #[cfg(feature = "psf")]
             AudioInner::Psf(psf) => psf.next(),
             AudioInner::Symphonia {
                 ref mut decoder,
@@ -248,6 +254,7 @@ impl Source for AudioSource {
     fn current_frame_len(&self) -> Option<usize> {
         match &self.inner {
             AudioInner::Gme(gme) => gme.current_frame_len(),
+            #[cfg(feature = "psf")]
             AudioInner::Psf(psf) => psf.current_frame_len(),
             AudioInner::Symphonia { buffer, buffer_offset, .. } => {
                 Some(buffer.len().saturating_sub(*buffer_offset))
@@ -258,6 +265,7 @@ impl Source for AudioSource {
     fn channels(&self) -> u16 {
         match &self.inner {
             AudioInner::Gme(gme) => gme.channels(),
+            #[cfg(feature = "psf")]
             AudioInner::Psf(psf) => psf.channels(),
             AudioInner::Symphonia { channels, .. } => *channels,
         }
@@ -266,6 +274,7 @@ impl Source for AudioSource {
     fn sample_rate(&self) -> u32 {
         match &self.inner {
             AudioInner::Gme(gme) => gme.sample_rate(),
+            #[cfg(feature = "psf")]
             AudioInner::Psf(psf) => psf.sample_rate(),
             AudioInner::Symphonia { sample_rate, .. } => *sample_rate,
         }
@@ -274,6 +283,7 @@ impl Source for AudioSource {
     fn total_duration(&self) -> Option<Duration> {
         match &self.inner {
             AudioInner::Gme(gme) => gme.total_duration(),
+            #[cfg(feature = "psf")]
             AudioInner::Psf(psf) => psf.total_duration(),
             AudioInner::Symphonia { total_duration, .. } => *total_duration,
         }
@@ -282,6 +292,7 @@ impl Source for AudioSource {
     fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
         match &mut self.inner {
             AudioInner::Gme(gme) => gme.try_seek(pos),
+            #[cfg(feature = "psf")]
             AudioInner::Psf(psf) => psf.try_seek(pos),
             AudioInner::Symphonia {
                 ref mut format,

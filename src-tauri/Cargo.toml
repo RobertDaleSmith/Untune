@@ -18,6 +18,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # check-cfg flags every macro expansion. Declare it as a known cfg to silence it.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
 
+[features]
+default = []
+# Optional PlayStation Sound Format (PSF / PSF2) playback. Uses the
+# Highly Experimental emulator core, which has no upstream license —
+# official releases must NOT enable this feature. Local builders can
+# opt in at their own discretion (`cargo tauri build --features psf` or
+# `cargo check --features psf`); requires the vendored submodules to be
+# checked out: `git submodule update --init src-tauri/vendor`.
+psf = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 cc = "1"
