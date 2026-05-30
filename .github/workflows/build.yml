@@ -1,0 +1,321 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump_version:
+        description: 'Bump version and create release'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Cancel in-flight runs for PRs only; let main pushes and dispatches complete.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Build the macOS app for both architectures in parallel. Runs on every
+  # push, PR, and manual dispatch — the build itself is the test gate.
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: macos-14
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Get commit hash
+        id: commit
+        run: echo "hash=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Import Apple signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "No signing certificate configured — building unsigned"
+            exit 0
+          fi
+
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+          rm "$CERT_PATH"
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version ^2 --locked
+
+      - name: Build Tauri app (${{ matrix.target }})
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            cargo tauri build --target ${{ matrix.target }} \
+              --config '{"bundle":{"macOS":{"signingIdentity":"'"$APPLE_SIGNING_IDENTITY"'"}}}'
+          else
+            cargo tauri build --target ${{ matrix.target }}
+          fi
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_ID" ]; then
+            echo "No notarization credentials — skipping"
+            exit 0
+          fi
+
+          DMG_PATH=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
+          if [ -z "$DMG_PATH" ]; then
+            echo "No DMG produced — skipping notarization"
+            exit 0
+          fi
+
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          xcrun stapler staple "$DMG_PATH"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+      - name: Collect and rename artifacts
+        run: |
+          mkdir -p releases
+          BUNDLE_DIR=src-tauri/target/${{ matrix.target }}/release/bundle
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            ARCH=aarch64
+          else
+            ARCH=x86_64
+          fi
+
+          # .dmg
+          for f in "$BUNDLE_DIR"/dmg/*.dmg; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f" .dmg)
+            cp "$f" "releases/${base}-${ARCH}.dmg"
+          done
+
+          # .app.tar.gz (Tauri updater bundle, if produced)
+          for f in "$BUNDLE_DIR"/macos/*.app.tar.gz; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f" .app.tar.gz)
+            cp "$f" "releases/${base}-${ARCH}.app.tar.gz"
+          done
+
+          echo "Built artifacts:"
+          ls -lh releases/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: untune-${{ matrix.target }}
+          path: releases/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build summary
+        run: |
+          echo "### ✅ Build complete (${{ matrix.target }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ steps.commit.outputs.hash }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifacts:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh releases/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # Bump version (if requested) and decide whether to cut a release.
+  # Manual dispatch only — never runs on push or PR.
+  check-version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version
+        if: github.event.inputs.bump_version != 'none'
+        id: bump
+        run: |
+          CURRENT=$(jq -r .version package.json)
+          IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"
+          case "${{ github.event.inputs.bump_version }}" in
+            patch) PAT=$((PAT + 1));;
+            minor) MIN=$((MIN + 1)); PAT=0;;
+            major) MAJ=$((MAJ + 1)); MIN=0; PAT=0;;
+          esac
+          NEW="${MAJ}.${MIN}.${PAT}"
+          echo "📦 Bumping version: $CURRENT → $NEW"
+
+          jq ".version = \"$NEW\"" package.json > package.json.tmp && mv package.json.tmp package.json
+          jq ".version = \"$NEW\"" src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp && mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+          # Cargo.toml: only touch the version line in [package], not dep versions.
+          sed -i.bak "/^\[package\]/,/^\[/{ s/^version = \"[^\"]*\"/version = \"$NEW\"/; }" src-tauri/Cargo.toml
+          rm src-tauri/Cargo.toml.bak
+
+          echo "new=$NEW" >> $GITHUB_OUTPUT
+
+      - name: Commit version bump
+        if: github.event.inputs.bump_version != 'none'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Bump version to ${{ steps.bump.outputs.new }}"
+          file_pattern: package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
+
+      - name: Read current version
+        id: version
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Current version: $VERSION"
+
+      - name: Check if release exists
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "⏭️  v${VERSION} already has a release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ v${VERSION} does not have a release — will publish"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  # Collect both arch artifacts, generate checksums, publish the GitHub Release.
+  create-release:
+    needs: [build, check-version]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: untune-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          ls -lh
+          sha256sum * > checksums.txt
+          echo ""
+          echo "🔐 Checksums:"
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Untune v${{ needs.check-version.outputs.version }}
+          body: |
+            See [CHANGELOG.md](https://github.com/RobertDaleSmith/Untune/blob/main/CHANGELOG.md) for the full release notes.
+
+            ## Install (macOS)
+
+            Download the `.dmg` that matches your Mac:
+
+            - **Apple Silicon** (M1 / M2 / M3 / M4): `*-aarch64.dmg`
+            - **Intel:** `*-x86_64.dmg`
+
+            Open the DMG and drag **Untune** to your Applications folder. If
+            macOS blocks the first launch, right-click the app → Open.
+
+            `checksums.txt` contains SHA-256 sums for every asset.
+          files: |
+            artifacts/*
+          draft: false
+          prerelease: false
+
+      - name: Release summary
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "### 🚀 Released v${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`v${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Release contents:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh artifacts/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
