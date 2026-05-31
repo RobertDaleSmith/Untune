@@ -284,10 +284,12 @@ open Untune.xcodeproj
 
 ## CI/CD
 
-GitHub Actions workflows in `.github/workflows/`:
+GitHub Actions workflow in `.github/workflows/`:
 
-- **ci.yml** — Runs on push/PR: TypeScript check, Rust check, full Tauri build, uploads DMG artifact
-- **release.yml** — Runs on version tags (`v*`): Signed build, Apple notarization, GitHub Release with DMG
+- **build.yml** — One workflow handles everything:
+  - **Push to main / PRs**: type-check, `cargo check`, full Tauri build for `aarch64-apple-darwin` + `x86_64-apple-darwin`, uploads DMG artifacts
+  - **Manual dispatch** (Actions → Build & Release → Run workflow) with `bump_version = patch/minor/major`: bumps version across `package.json`, `Cargo.toml`, `tauri.conf.json`, publishes a tagged GitHub Release with both architectures and a `checksums.txt`
+  - Signs with the Developer ID cert when `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` secrets are present; otherwise produces an unsigned DMG that still works via right-click → Open
 
 ## Project Documentation
 
