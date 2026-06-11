@@ -667,11 +667,6 @@ function App() {
     };
   }, [currentArtworkUrl, showAlbumAccent, theme]);
 
-  // Two-layer crossfade for blurred background artwork
-  const [bgBottom, setBgBottom] = useState<string | null>(null);
-  const [bgTop, setBgTop] = useState<string | null>(null);
-  const [bgTopReady, setBgTopReady] = useState(false);
-  const prevArtworkRef = useRef<string | null>(null);
 
   // Drop the expensive blurred background while the window is actively resizing.
   // A 64px blur on a full-window box re-rasterizes on every live-resize frame,
@@ -689,31 +684,6 @@ function App() {
     return () => { if (timer) clearTimeout(timer); unlisten.then((f) => f()); };
   }, []);
 
-  useEffect(() => {
-    if (currentArtworkUrl === prevArtworkRef.current) return;
-    prevArtworkRef.current = currentArtworkUrl;
-    if (!currentArtworkUrl) {
-      setBgTopReady(false);
-      setBgTop(null);
-      const t = setTimeout(() => setBgBottom(null), 500);
-      return () => clearTimeout(t);
-    }
-    setBgTopReady(false);
-    setBgTop(currentArtworkUrl);
-    // One frame for React to commit the new layer at opacity 0, then flip to 1
-    // so the CSS opacity transition runs. After the 500ms fade settles, promote
-    // top → bottom and drop top to keep the DOM clean.
-    const raf = requestAnimationFrame(() => setBgTopReady(true));
-    const settle = setTimeout(() => {
-      setBgBottom(currentArtworkUrl);
-      setBgTopReady(false);
-      setBgTop(null);
-    }, 600);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(settle);
-    };
-  }, [currentArtworkUrl]);
 
   const handleImportComplete = useCallback(() => {
     // Progress modal auto-dismisses, tracks load in handleImport
@@ -795,14 +765,13 @@ function App() {
       className="h-screen bg-n-950 text-n-100 relative overflow-hidden"
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Blurred artwork background */}
+      {/* Blurred artwork background — single img, src swaps on track change.
+          Quarter-res container + blur(16px) keeps paint cheap (~15× vs full
+          size with blur(64px)). No fade animation; the new art just snaps in.
+          Resize gate hides the img during window resize so the blur isn't
+          re-rasterized every frame of a live resize. */}
       {showAlbumAccent && (
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true" style={{ transform: "translateZ(0)" }}>
-          {/* Quarter-resolution blur container: the blurred imgs render at 25%
-              of window size with blur(16px), then GPU-scale up 4× to fill. The
-              blur kernel operates on ~6% of the pixels for a visually identical
-              result — paint cost drops ~15×, and the new bg img mounts without
-              stalling the rAF that triggers the opacity fade. */}
           <div
             className="absolute"
             style={{
@@ -814,26 +783,15 @@ function App() {
               transformOrigin: "top left",
             }}
           >
-            {/* Bottom layer: previous/stable artwork */}
-            {!resizing && bgBottom && (
+            {!resizing && currentArtworkUrl && (
               <img
-                src={bgBottom}
+                src={currentArtworkUrl}
                 alt=""
                 className="absolute inset-[-12px] w-[calc(100%+24px)] h-[calc(100%+24px)] object-cover"
                 style={{ filter: "var(--accent-filter)", transform: "translateZ(0)", backfaceVisibility: "hidden" }}
               />
             )}
-            {/* Top layer: incoming artwork, fades in over bottom */}
-            {!resizing && bgTop && (
-              <img
-                src={bgTop}
-                alt=""
-                className="absolute inset-[-12px] w-[calc(100%+24px)] h-[calc(100%+24px)] object-cover transition-opacity duration-500 ease-in-out"
-                style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
-              />
-            )}
           </div>
-          {/* Theme-adaptive overlay for readability (stays full-size, NOT scaled) */}
           <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
         </div>
       )}
