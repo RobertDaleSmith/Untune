@@ -56,11 +56,6 @@ export function adjustForTheme(
   return `rgb(${ro} ${go} ${bo})`;
 }
 
-// Cache extracted colors by data URL. Decoding the full-size album art into
-// an offscreen Image() takes hundreds of ms — caching makes repeat tracks
-// (same album, replayed songs) instant.
-const accentCache = new Map<string, [number, number, number] | null>();
-
 /**
  * Extract a vibrant accent color from an image using saturation-weighted hue bucketing.
  * Returns [r, g, b] or null if no vibrant color can be determined.
@@ -68,13 +63,9 @@ const accentCache = new Map<string, [number, number, number] | null>();
 export function extractAccentColor(
   imgSrc: string,
 ): Promise<[number, number, number] | null> {
-  if (accentCache.has(imgSrc)) {
-    return Promise.resolve(accentCache.get(imgSrc) ?? null);
-  }
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.decoding = "async";
     img.onload = () => {
       const c = document.createElement("canvas");
       c.width = 64;
@@ -144,22 +135,18 @@ export function extractAccentColor(
           best = i;
         }
       }
-      let result: [number, number, number] | null = null;
       if (best >= 0 && bestScore > 0) {
         const bk = buckets[best];
-        result = [
+        resolve([
           Math.round(bk.rSum / bk.satScore),
           Math.round(bk.gSum / bk.satScore),
           Math.round(bk.bSum / bk.satScore),
-        ];
+        ]);
+      } else {
+        resolve(null);
       }
-      accentCache.set(imgSrc, result);
-      resolve(result);
     };
-    img.onerror = () => {
-      accentCache.set(imgSrc, null);
-      resolve(null);
-    };
+    img.onerror = () => resolve(null);
     img.src = imgSrc;
   });
 }
