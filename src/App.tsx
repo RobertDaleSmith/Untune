@@ -588,63 +588,14 @@ function App() {
       return;
     }
 
-    // Parse "rgb(R G B)" or "rgba(R,G,B,...)" into [r,g,b]
-    const parseRgb = (s: string): [number, number, number] => {
-      const m = s.match(/\d+/g);
-      return m ? [+m[0], +m[1], +m[2]] : [128, 128, 128];
-    };
-
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-    let animId = 0;
-    const animateAccent = (
-      targetAccent: string,
-      targetRow: string,
-      targetRowHover: string,
-    ) => {
-      if (animId) cancelAnimationFrame(animId);
-      const fromAccent = parseRgb(root.style.getPropertyValue("--color-accent") || targetAccent);
-      const toAccent = parseRgb(targetAccent);
-      const fromRow = parseRgb(root.style.getPropertyValue("--accent-row") || targetRow);
-      const toRow = parseRgb(targetRow);
-      const fromRowH = parseRgb(root.style.getPropertyValue("--accent-row-hover") || targetRowHover);
-      const toRowH = parseRgb(targetRowHover);
-
-      // Extract alpha values from targets
-      const rowAlpha = targetRow.match(/[\d.]+/g);
-      const rowHAlpha = targetRowHover.match(/[\d.]+/g);
-      const rA = rowAlpha ? +rowAlpha[3] : 0.18;
-      const rHA = rowHAlpha ? +rowHAlpha[3] : 0.24;
-
-      const duration = 500;
-      const start = performance.now();
-      const step = (now: number) => {
-        const t = Math.min(1, (now - start) / duration);
-        const ease = t * (2 - t); // ease-out quad
-        const ar = Math.round(lerp(fromAccent[0], toAccent[0], ease));
-        const ag = Math.round(lerp(fromAccent[1], toAccent[1], ease));
-        const ab = Math.round(lerp(fromAccent[2], toAccent[2], ease));
-        root.style.setProperty("--color-accent", `rgb(${ar} ${ag} ${ab})`);
-        const rr = Math.round(lerp(fromRow[0], toRow[0], ease));
-        const rg = Math.round(lerp(fromRow[1], toRow[1], ease));
-        const rb = Math.round(lerp(fromRow[2], toRow[2], ease));
-        root.style.setProperty("--accent-row", `rgba(${rr},${rg},${rb},${rA})`);
-        const hr = Math.round(lerp(fromRowH[0], toRowH[0], ease));
-        const hg = Math.round(lerp(fromRowH[1], toRowH[1], ease));
-        const hb = Math.round(lerp(fromRowH[2], toRowH[2], ease));
-        root.style.setProperty("--accent-row-hover", `rgba(${hr},${hg},${hb},${rHA})`);
-        if (t < 1) animId = requestAnimationFrame(step);
-      };
-      animId = requestAnimationFrame(step);
-    };
-
-    const applyColor = (isDark: boolean, r: number, g: number, b: number) => {
-      const accent = adjustForTheme([r, g, b], isDark);
-      if (isDark) {
-        animateAccent(accent, `rgba(${r},${g},${b},0.18)`, `rgba(${r},${g},${b},0.24)`);
-      } else {
-        animateAccent(accent, `rgba(${r},${g},${b},0.12)`, `rgba(${r},${g},${b},0.18)`);
-      }
+    // Snap the CSS vars in one go. The previous 60fps rAF animation mutated
+    // these three vars 30 times during a 500ms transition; every visible
+    // TrackTable row depends on them, so the browser had to repaint every row
+    // on every frame — that's where the stutter came from.
+    const setAccent = (accent: string, row: string, rowHover: string) => {
+      root.style.setProperty("--color-accent", accent);
+      root.style.setProperty("--accent-row", row);
+      root.style.setProperty("--accent-row-hover", rowHover);
     };
 
     let cancelled = false;
@@ -652,19 +603,18 @@ function App() {
       if (cancelled) return;
       const isDark = getIsDark();
       if (color) {
-        applyColor(isDark, color[0], color[1], color[2]);
-      } else {
+        const accent = adjustForTheme(color, isDark);
+        const [r, g, b] = color;
         if (isDark) {
-          animateAccent("rgb(255 255 255)", "rgba(255,255,255,0.18)", "rgba(255,255,255,0.24)");
+          setAccent(accent, `rgba(${r},${g},${b},0.18)`, `rgba(${r},${g},${b},0.24)`);
         } else {
-          animateAccent("rgb(64 64 64)", "rgba(0,0,0,0.10)", "rgba(0,0,0,0.15)");
+          setAccent(accent, `rgba(${r},${g},${b},0.12)`, `rgba(${r},${g},${b},0.18)`);
         }
+      } else {
+        setNeutral(isDark);
       }
     });
-    return () => {
-      cancelled = true;
-      if (animId) cancelAnimationFrame(animId);
-    };
+    return () => { cancelled = true; };
   }, [currentArtworkUrl, showAlbumAccent, theme]);
 
 
