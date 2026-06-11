@@ -32,10 +32,7 @@
   --n-950: #0a0a0a;
   --accent-row: rgba(255,255,255,0.18);
   --accent-row-hover: rgba(255,255,255,0.24);
-  /* blur(16px) — the bg img is rendered inside a 25% × 25% container scaled 4×,
-     so this is visually equivalent to a 64px blur on a full-size element but
-     paints ~15× faster. See App.tsx bg layers. */
-  --accent-filter: blur(16px) saturate(1.8) brightness(0.4);
+  --accent-filter: blur(64px) saturate(1.8) brightness(0.4);
   --accent-overlay: rgba(10,10,10,0.60);
   --mini-bg-filter: blur(20px) saturate(2) brightness(0.5);
   --mini-bg-overlay: rgba(10,10,10,0.35);
@@ -56,8 +53,7 @@
   --n-950: #ffffff;
   --accent-row: rgba(0,0,0,0.10);
   --accent-row-hover: rgba(0,0,0,0.15);
-  /* See dark-theme note above — blur radius scaled for the 25% × 25% container. */
-  --accent-filter: blur(16px) saturate(1.4) brightness(1.2);
+  --accent-filter: blur(64px) saturate(1.4) brightness(1.2);
   --accent-overlay: rgba(255,255,255,0.75);
   --mini-bg-filter: blur(20px) saturate(1.6) brightness(1.3);
   --mini-bg-overlay: rgba(255,255,255,0.45);

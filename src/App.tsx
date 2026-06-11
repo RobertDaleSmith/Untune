@@ -520,47 +520,29 @@ function App() {
       return;
     }
     let cancelled = false;
-    fetchArtwork(track.artworkHash, { priority: true }).then((url) => {
+    fetchArtwork(track.artworkHash).then((url) => {
       if (!cancelled) usePlaybackStore.setState({ currentArtworkUrl: url ?? null });
     });
     return () => { cancelled = true; };
   }, [currentTrackId, tracks]);
 
-  // Pre-warm artwork for upcoming tracks. The immediate next + previous go
-  // through the priority lane (bypass the 6-slot queue) so they're guaranteed
-  // cached even if AlbumsView/TrackTable tiles are saturating the queue —
-  // hitting Next/Prev should never wait on an IPC. Re-runs when shuffle or
-  // repeat changes since those reshape what "next" means.
-  const _shuffle = usePlaybackStore((s) => s.shuffle);
-  const _repeatMode = usePlaybackStore((s) => s.repeatMode);
+  // Pre-warm artwork for upcoming tracks (next/prev in queue)
   useEffect(() => {
     if (currentTrackId == null || tracks.length === 0) return;
     let cancelled = false;
     getUpcomingTracks(5).then(({ prevTrackIds, nextTrackIds }) => {
       if (cancelled) return;
+      const allIds = [...nextTrackIds, ...prevTrackIds];
       const trackMap = new Map(tracks.map((t) => [t.id, t]));
-
-      // Priority lane: immediate next + prev. Cached before the user can
-      // possibly click the button.
-      const immediate = [nextTrackIds[0], prevTrackIds[0]].filter(
-        (id): id is number => id != null,
-      );
-      for (const id of immediate) {
+      for (const id of allIds) {
         const t = trackMap.get(id);
         if (t?.artworkHash) {
-          fetchArtwork(t.artworkHash, { priority: true }).catch(() => {});
+          fetchArtwork(t.artworkHash); // fire-and-forget: populates shared cache
         }
-      }
-
-      // Lookahead: nice-to-have, normal queue.
-      const rest = [...nextTrackIds.slice(1), ...prevTrackIds.slice(1)];
-      for (const id of rest) {
-        const t = trackMap.get(id);
-        if (t?.artworkHash) fetchArtwork(t.artworkHash).catch(() => {});
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [currentTrackId, tracks, _shuffle, _repeatMode]);
+  }, [currentTrackId, tracks]);
 
   // Extract accent color from artwork and set CSS custom properties
   const theme = useThemeStore((s) => s.theme);
@@ -695,25 +677,47 @@ function App() {
     if (!currentArtworkUrl) {
       setBgTopReady(false);
       setBgTop(null);
-      const t = setTimeout(() => setBgBottom(null), 500);
+      const t = setTimeout(() => setBgBottom(null), 600);
       return () => clearTimeout(t);
     }
+    // Preload image, but don't wait more than 100ms
     setBgTopReady(false);
     setBgTop(currentArtworkUrl);
-    // One frame for React to commit the new layer at opacity 0, then flip to 1
-    // so the CSS opacity transition runs. After the 500ms fade settles, promote
-    // top → bottom and drop top to keep the DOM clean.
-    const raf = requestAnimationFrame(() => setBgTopReady(true));
-    const settle = setTimeout(() => {
+    let started = false;
+    const startCrossfade = () => {
+      if (started) return;
+      started = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setBgTopReady(true));
+      });
+    };
+    const img = new Image();
+    img.decoding = "async";
+    img.src = currentArtworkUrl;
+    // Wait for the bitmap to fully decode so the fade can't stutter mid-flight,
+    // but never block longer than 150ms.
+    img.decode().then(startCrossfade, startCrossfade);
+    setTimeout(startCrossfade, 150);
+    const t = setTimeout(() => {
       setBgBottom(currentArtworkUrl);
       setBgTopReady(false);
       setBgTop(null);
-    }, 600);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(settle);
-    };
+    }, 700);
+    return () => clearTimeout(t);
   }, [currentArtworkUrl]);
+
+  // Pre-cache next track's artwork into fetchArtwork cache for instant crossfade
+  useEffect(() => {
+    if (!currentTrackId) return;
+    getUpcomingTracks(3).then(({ nextTrackIds }) => {
+      for (const id of nextTrackIds) {
+        const t = tracks.find((tr) => tr.id === id);
+        if (t?.artworkHash) {
+          fetchArtwork(t.artworkHash).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+  }, [currentTrackId, tracks]);
 
   const handleImportComplete = useCallback(() => {
     // Progress modal auto-dismisses, tracks load in handleImport
@@ -798,42 +802,27 @@ function App() {
       {/* Blurred artwork background */}
       {showAlbumAccent && (
         <div className="absolute inset-0 overflow-hidden" aria-hidden="true" style={{ transform: "translateZ(0)" }}>
-          {/* Quarter-resolution blur container: the blurred imgs render at 25%
-              of window size with blur(16px), then GPU-scale up 4× to fill. The
-              blur kernel operates on ~6% of the pixels for a visually identical
-              result — paint cost drops ~15×, and the new bg img mounts without
-              stalling the rAF that triggers the opacity fade. */}
-          <div
-            className="absolute"
-            style={{
-              top: 0,
-              left: 0,
-              width: "25%",
-              height: "25%",
-              transform: "scale(4)",
-              transformOrigin: "top left",
-            }}
-          >
-            {/* Bottom layer: previous/stable artwork */}
-            {!resizing && bgBottom && (
-              <img
-                src={bgBottom}
-                alt=""
-                className="absolute inset-[-12px] w-[calc(100%+24px)] h-[calc(100%+24px)] object-cover"
-                style={{ filter: "var(--accent-filter)", transform: "translateZ(0)", backfaceVisibility: "hidden" }}
-              />
-            )}
-            {/* Top layer: incoming artwork, fades in over bottom */}
-            {!resizing && bgTop && (
-              <img
-                src={bgTop}
-                alt=""
-                className="absolute inset-[-12px] w-[calc(100%+24px)] h-[calc(100%+24px)] object-cover transition-opacity duration-500 ease-in-out"
-                style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
-              />
-            )}
-          </div>
-          {/* Theme-adaptive overlay for readability (stays full-size, NOT scaled) */}
+          {/* Bottom layer: previous/stable artwork — blur baked per-image for GPU compositing */}
+          {!resizing && bgBottom && (
+            <img
+              src={bgBottom}
+              alt=""
+              className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover"
+              style={{ filter: "var(--accent-filter)", transform: "translateZ(0)", backfaceVisibility: "hidden" }}
+            />
+          )}
+          {/* Top layer: incoming artwork, fades in over bottom. Promoted to its own
+              compositor layer so the blur is cached once and the opacity fade runs on
+              the GPU instead of re-rasterizing the 64px blur every frame. */}
+          {!resizing && bgTop && (
+            <img
+              src={bgTop}
+              alt=""
+              className="absolute inset-[-48px] w-[calc(100%+96px)] h-[calc(100%+96px)] object-cover transition-opacity duration-500 ease-in-out"
+              style={{ filter: "var(--accent-filter)", opacity: bgTopReady ? 1 : 0, transform: "translateZ(0)", backfaceVisibility: "hidden", willChange: "opacity" }}
+            />
+          )}
+          {/* Theme-adaptive overlay for readability */}
           <div className="absolute inset-0" style={{ backgroundColor: "var(--accent-overlay)" }} />
         </div>
       )}

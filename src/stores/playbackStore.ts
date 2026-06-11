@@ -216,32 +216,18 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         // Use current settings
       }
     }
-
-    // Optimistic UI update. playQueue() ships the entire trackIds array over
-    // IPC to Rust, which for a 62k-row library takes a couple seconds even
-    // though audio starts the moment Rust processes the first ID. Setting
-    // currentTrackId now lets the artwork crossfade, accent color, and
-    // now-playing highlight kick off immediately instead of waiting for the
-    // IPC roundtrip.
-    const prevState = {
-      currentTrackId: get().currentTrackId,
-      isPlaying: get().isPlaying,
-      position: get().position,
-      queueSource: get().queueSource,
-    };
-    set({
-      queueSource: newSource,
-      _restoredFromSession: false,
-      currentTrackId: trackIds[startIndex],
-      isPlaying: true,
-      position: 0,
-    });
+    set({ queueSource: newSource, _restoredFromSession: false });
     // User started playing — dismiss handoff banner
     if (get().handoffInfo) {
       set({ handoffInfo: null, handoffDismissed: true, _handoffDismissedAt: Date.now() / 1000 });
     }
     try {
       await playQueue(trackIds, startIndex);
+      set({
+        currentTrackId: trackIds[startIndex],
+        isPlaying: true,
+        position: 0,
+      });
       setPreference("session.trackId", String(trackIds[startIndex])).catch(() => {});
       setPreference("session.position", "0").catch(() => {});
       if (newSource) setPreference("session.queueSource", newSource).catch(() => {});
@@ -253,8 +239,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       }
       get().startPolling();
     } catch (e) {
-      // Roll back the optimistic update — playback didn't actually start.
-      set(prevState);
       const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "Playback failed";
       get().showError(msg);
     }
