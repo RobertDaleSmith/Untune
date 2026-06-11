@@ -21,15 +21,39 @@ function flush() {
   }
 }
 
-export function fetchArtwork(artworkHash: string): Promise<string | null> {
+export function fetchArtwork(
+  artworkHash: string,
+  opts?: { priority?: boolean },
+): Promise<string | null> {
   // Return from cache immediately
   if (cache.has(artworkHash)) {
     return Promise.resolve(cache.get(artworkHash) ?? null);
   }
 
-  // Deduplicate in-flight requests
+  // Deduplicate in-flight requests — a priority caller still piggybacks on an
+  // already-running fetch instead of starting a second one.
   const existing = inflight.get(artworkHash);
   if (existing) return existing;
+
+  // Priority requests (now-playing artwork) bypass the queue entirely so they
+  // can't get stuck behind a wave of TrackTable/AlbumsView tile fetches. The
+  // backend handles the extra concurrent request fine, and tile fetches keep
+  // their MAX_CONCURRENT cap.
+  if (opts?.priority) {
+    const p = getArtworkDataUrl(artworkHash)
+      .then((url) => {
+        cache.set(artworkHash, url ?? null);
+        inflight.delete(artworkHash);
+        return url ?? null;
+      })
+      .catch(() => {
+        cache.set(artworkHash, null);
+        inflight.delete(artworkHash);
+        return null;
+      });
+    inflight.set(artworkHash, p);
+    return p;
+  }
 
   const p = new Promise<string | null>((resolve, reject) => {
     queue.push({ hash: artworkHash, resolve, reject });

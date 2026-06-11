@@ -67,29 +67,29 @@ pub fn play_queue(
     if track_ids.is_empty() {
         return Err("Empty queue".to_string());
     }
-    // Filter to only playable tracks (have file_path), preserving relative order
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    let playable: std::collections::HashSet<i64> = {
-        let ids_str: Vec<String> = track_ids.iter().map(|id| id.to_string()).collect();
-        let ph = ids_str.join(",");
-        let sql = format!("SELECT id FROM tracks WHERE id IN ({}) AND file_path IS NOT NULL", ph);
-        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |row| row.get::<_, i64>(0)).map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
-    drop(conn);
 
-    let filtered: Vec<i64> = track_ids.iter().copied().filter(|id| playable.contains(id)).collect();
-    if filtered.is_empty() {
-        return Err("No playable tracks".to_string());
+    // Try playing forward from start_index one track at a time until we hit
+    // one with a valid file_path. The previous implementation pre-filtered
+    // the queue with a SQL `id IN (...)` clause that, for a 62k-row library,
+    // built a 500KB SQL string and held the DB lock for 2-3s while SQLite
+    // parsed and ran it. That lock blocked every parallel DB read — most
+    // visibly the now-playing artwork fetch — and stalled the UI crossfade
+    // for the full duration even though audio had already started.
+    //
+    // Per-track lookup is O(1) DB work per attempt; unplayable IDs deeper in
+    // the queue get skipped at advance time, the same as any other track
+    // whose file goes missing later.
+    let queue_len = track_ids.len();
+    let start = start_index.min(queue_len - 1);
+    let max_tries = queue_len.min(50);
+    for offset in 0..max_tries {
+        let idx = (start + offset) % queue_len;
+        let track_id = track_ids[idx];
+        if lookup_and_play(track_id, &db, &playback, false).is_ok() {
+            return playback.set_queue(track_ids, idx);
+        }
     }
-    // Adjust start index — find the requested track in the filtered list
-    let requested_id = track_ids.get(start_index).copied().unwrap_or(filtered[0]);
-    let idx = filtered.iter().position(|&id| id == requested_id).unwrap_or(0);
-    let track_id = filtered[idx];
-
-    lookup_and_play(track_id, &db, &playback, false)?;
-    playback.set_queue(filtered, idx)
+    Err("No playable tracks found".to_string())
 }
 
 #[tauri::command]
