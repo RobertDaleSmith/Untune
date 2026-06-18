@@ -772,8 +772,24 @@ impl PlaybackState {
             if let Some(idx) = new_queue_index {
                 if inner.shuffle {
                     inner.shuffle_history.push(inner.queue_index);
+                    // The appended track was chosen via a non-consuming peek
+                    // (forward-stack top, else the head of shuffle_upcoming).
+                    // Consume that entry now — otherwise the next manual/auto
+                    // advance re-picks the track we just transitioned into,
+                    // making the same song play again until Next is pressed twice.
+                    if inner.shuffle_forward.last() == Some(&idx) {
+                        inner.shuffle_forward.pop();
+                    } else {
+                        if inner.shuffle_upcoming.first() == Some(&idx) {
+                            inner.shuffle_upcoming.remove(0);
+                        }
+                        inner.shuffle_forward.clear();
+                    }
                 }
                 inner.queue_index = idx;
+                if inner.shuffle {
+                    Self::fill_shuffle_upcoming(inner);
+                }
             }
 
             Some(new_id)
